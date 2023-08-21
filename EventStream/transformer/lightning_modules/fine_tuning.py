@@ -463,7 +463,7 @@ def train(cfg: FinetuneConfig):
         callbacks=callbacks,
     )
 
-    if cfg.wandb_logger_kwargs.get("name", None):
+    if cfg.wandb_logger_kwargs.get("name", None) or cfg.wandb_logger_kwargs.get("project", None):
         if "do_log_graph" in cfg.wandb_logger_kwargs:
             do_log_graph = cfg.wandb_logger_kwargs.pop("do_log_graph")
         else:

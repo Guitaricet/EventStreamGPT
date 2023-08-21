@@ -8,6 +8,7 @@ import lightning as L
 import omegaconf
 import torch
 import torch.multiprocessing
+import torch.utils.data
 import torchmetrics
 from lightning.pytorch.callbacks import LearningRateMonitor
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
@@ -637,7 +638,7 @@ def train(cfg: PretrainConfig):
         callbacks=callbacks,
     )
 
-    if cfg.wandb_logger_kwargs.get("name", None):
+    if cfg.wandb_logger_kwargs.get("name", None) or cfg.wandb_logger_kwargs.get("project", None):
         if "do_log_graph" in cfg.wandb_logger_kwargs:
             do_log_graph = cfg.wandb_logger_kwargs.pop("do_log_graph")
         else:
