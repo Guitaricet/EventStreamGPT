@@ -266,7 +266,7 @@ class ESTForGenerativeSequenceModelingLM(L.LightningModule):
                     metric(preds, labels)
 
                 self.log(
-                    f"{split}_{measurement}_{metric_name}",
+                    f"{split}/{measurement}_{metric_name}",
                     metric,
                     batch_size=self.optimization_config.batch_size,
                     sync_dist=True,
@@ -316,22 +316,21 @@ class ESTForGenerativeSequenceModelingLM(L.LightningModule):
 
         # We always want to log the raw loss.
         log_kwargs = {"batch_size": self.optimization_config.batch_size, "sync_dist": True}
-        self.log(f"{split}_loss", results["loss"], **log_kwargs)
+        self.log(f"{split}/loss", results["loss"], **log_kwargs)
 
         if self.metrics_config.do_log_only_loss(split):
             return
 
         # We start by logging the losses.
-        if self.metrics_config.do_log(split, MetricCategories.LOSS_PARTS):
-            self.log_dict(
-                {f"{split}_{k}_cls_NLL": v for k, v in results["losses"]["classification"].items()},
-                **log_kwargs,
-            )
-            self.log_dict(
-                {f"{split}_{k}_reg_NLL": v for k, v in results["losses"]["regression"].items()},
-                **log_kwargs,
-            )
-            self.log(f"{split}_TTE_reg_NLL", results["losses"]["time_to_event"], **log_kwargs)
+        self.log_dict(
+            {f"{split}/{k}_cls_NLL": v for k, v in results["losses"]["classification"].items()},
+            **log_kwargs,
+        )
+        self.log_dict(
+            {f"{split}/{k}_reg_NLL": v for k, v in results["losses"]["regression"].items()},
+            **log_kwargs,
+        )
+        self.log(f"{split}/TTE_reg_NLL", results["losses"]["time_to_event"], **log_kwargs)
 
         # Time-to-event
         if self.metrics_config.do_log(split, MetricCategories.TTE):
@@ -629,7 +628,7 @@ def train(cfg: PretrainConfig):
     callbacks = [LearningRateMonitor(logging_interval="step")]
     if optimization_config.patience is not None:
         callbacks.append(
-            EarlyStopping(monitor="tuning_loss", mode="min", patience=optimization_config.patience)
+            EarlyStopping(monitor="tuning/loss", mode="min", patience=optimization_config.patience)
         )
 
     trainer_kwargs = dict(
@@ -694,6 +693,6 @@ def train(cfg: PretrainConfig):
             with open(cfg.save_dir / "held_out_metrics.json", mode="w") as f:
                 json.dump(held_out_metrics, f)
 
-        return tuning_metrics[0]["tuning_loss"], tuning_metrics, held_out_metrics
+        return tuning_metrics[0]["tuning/loss"], tuning_metrics, held_out_metrics
 
     return None

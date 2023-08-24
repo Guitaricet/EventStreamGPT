@@ -451,7 +451,7 @@ def train(cfg: FinetuneConfig):
     callbacks = [LearningRateMonitor(logging_interval="step")]
     if optimization_config.patience is not None:
         callbacks.append(
-            EarlyStopping(monitor="tuning_loss", mode="min", patience=optimization_config.patience)
+            EarlyStopping(monitor="tuning/loss", mode="min", patience=optimization_config.patience)
         )
 
     checkpoints_dir = cfg.save_dir / "model_checkpoints"
@@ -511,4 +511,4 @@ def train(cfg: FinetuneConfig):
         with open(cfg.save_dir / "held_out_metrics.json", mode="w") as f:
             json.dump(held_out_metrics, f)
 
-    return tuning_metrics[0]["tuning_loss"], tuning_metrics, held_out_metrics
+    return tuning_metrics[0]["tuning/loss"], tuning_metrics, held_out_metrics
