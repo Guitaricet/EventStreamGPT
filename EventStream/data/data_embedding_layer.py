@@ -411,18 +411,18 @@ class DataEmbeddingLayer(torch.nn.Module):
         .. footbibliography::
 
         Args:
-            indices: A tensor of shape ``(batch_size, num_measurements)`` that contains the indices of the
+            indices: A tensor of shape ``(batch_size * max_seq_len, num_measurements)`` that contains the indices of the
                 observations in the batch. Zero indicates padding.
-            measurement_indices: A tensor of shape ``(batch_size, num_measurements)`` that contains the
+            measurement_indices: A tensor of shape ``(batch_size * max_seq_len, num_measurements)`` that contains the
                 indices of the measurements in each batch element. Zero indicates padding.
-            values: A tensor of shape ``(batch_size, num_measurements)`` that contains any continuous values
+            values: A tensor of shape ``(batch_size * max_seq_len, num_measurements)`` that contains any continuous values
                 associated with the observations in the batch. If values are not present for an observation,
                 the value in this tensor will be zero; however, a zero value itself does not indicate a value
                 wasn't present for the observation.
-            values_mask: A boolean tensor of shape ``(batch_size, num_measurements)`` that contains a mask
+            values_mask: A boolean tensor of shape ``(batch_size * max_seq_len, num_measurements)`` that contains a mask
                 indicating whether or not a given index, value pair should be included in the numerical
                 embedding.
-            cat_mask: A boolean tensor of shape ``(batch_size, num_measurements)`` that contains a mask
+            cat_mask: A boolean tensor of shape ``(batch_size * max_seq_len, num_measurements)`` that contains a mask
                 indicating whether or not a given index should be included in the categorical embedding.
 
         Returns:
@@ -447,6 +447,13 @@ class DataEmbeddingLayer(torch.nn.Module):
 
         num_embeds = self.num_proj(self.numerical_embed_layer(indices, per_sample_weights=num_values))
 
+        # categorical: input_ids (type-value pairs), for each type-value pair we have a vector of hidden_size floats
+
+        # numerical: type (e.g., lab/blood-sugar) and value 0.01
+        # embedding[type2index[lab/blood-sugar]] - same vector for any any associated value
+        # then, our embedding will be `value * embedding[type2index[lab/blood-sugar]]`
+        # 
+        # FCN(value) -> hidden -> ReLU -> hidden
         return self.categorical_weight * cat_embeds + self.numerical_weight * num_embeds
 
     def _embed(
@@ -564,13 +571,37 @@ class DataEmbeddingLayer(torch.nn.Module):
         """Returns the embedding of the dynamic features of the input batch.
 
         Args:
-            batch: The input batch to be embedded.
+            batch: PytorchBatch(
+            ...     event_mask=torch.BoolTensor([
+                        [True, True, True],
+                        [True, True, False]  # False is that entire event is padding
+                    ]),
+            ...     static_indices=torch.LongTensor([  # static measurements, indices from a joint vocab of all possible measurement type-value pairs
+                        [1, 2, 3, 7, 8],   # e.g., 1 - gender/M
+                        [1, 2, 3, 7, 10],
+                    ]),
+            ...     dynamic_indices=torch.LongTensor([
+                        [[7, 8], [11, 10], [8, 7]],  # 11 is medication/amoxicylin
+                        [[8, 7], [8 , 10], [0, 0]]
+                    ]),
+                    dynamic_values=torch.FloatTensor([
+                        [[1.0, 2.0], [0.0, 0.0], [1.1, 2.1]],  # if dynamic_values_mask is False, this measurement is not numeric
+                        [[5.0, 6.0], [7.0, 0.0], [0.0, 0.0]]
+                    ]),
+            ...     dynamic_values_mask=torch.BoolTensor(  # is_numeric or not known or outlier
+            ...         [
+            ...             [[True, True], [False, False], [True, True]],
+            ...             [[True, True], [True, False], [False, False]],
+            ...         ]
+                    )
+
         """
         batch_size, sequence_length, num_data_elements = batch["dynamic_values_mask"].shape
         out_shape = (batch_size, sequence_length, self.out_dim)
 
-        if self.split_by_measurement_indices:
+        if self.split_by_measurement_indices:  # do you have a dependncy graph you want to split it into, list of measurement index types
             categorical_mask, numerical_mask = self._split_batch_into_measurement_index_buckets(batch)
+
             _, _, num_measurement_buckets, _ = categorical_mask.shape
             out_shape = (batch_size, sequence_length, num_measurement_buckets, self.out_dim)
 
@@ -623,28 +654,78 @@ class DataEmbeddingLayer(torch.nn.Module):
                 `split_by_measurement_indices` is not `None` and there either there is an empty measurement
                 group beyond the first or there is an invalid specified group mode.
 
+        Proposal:
+            If we keep processing real numbers as special cases, we can have the input as simple as:
+                [
+                    "static_context": {
+                        "cat_types": LongTensor[batch, n_categorical_values],  # input ids describing static measurements
+                        "cat_values": LongTensor[batch, n_categorical_values],
+                        "r_types": LongTensor[batch, n_real_values],
+                        "r_values": FloatTensor[batch, n_real_values],
+                    },
+                    "events": List[Event],
+                ]
+
+                where Event {
+                    "cat_types": LongTensor[batch, n_categorical_values],  # 
+                    "cat_values": LongTensor[batch, n_categorical_values],  # values of categorical measurements
+                    "cat_times": LongTensor[batch, n_categorical_values],  # when each measurement was performed
+                    "r_types": LongTensor[batch, n_real_values],
+                    "r_values": FloatTensor[batch, n_real_values],
+                    "t_times": LongTensor[batch, n_categorical_values],  # when each measurement was performed
+                }
+
+            If we quantize real numbers into tokens, we can have the input as simple as:
+                [
+                    "static_context": LongTensor[input_ids],  # input ids describing static measurements and their values
+                    "events": [
+                        LongTensor[input_ids],  # input ids describing measurements in the event 
+                    ]
+                ]
+                
         Examples:
             >>> import torch
             >>> # Here we construct a batch with batch size of 2, sequence length of 3, number of static data
-            >>> # elements of 3, and number of dynamic data elements of 2.
+            >>> # elements of 5, and number of dynamic data elements of 7.
             >>> batch = PytorchBatch(
-            ...     event_mask=torch.BoolTensor([[True, True, True], [True, True, False]]),
-            ...     static_indices=torch.LongTensor([[1, 2, 3], [4, 5, 6]]),
-            ...     static_measurement_indices=torch.LongTensor([[1, 1, 2], [2, 2, 3]]),
-            ...     dynamic_indices=torch.LongTensor([[[7, 8], [11, 10], [8, 7]], [[8, 7], [8, 10], [0, 0]]]),
-            ...     dynamic_measurement_indices=torch.LongTensor(
-            ...         [[[4, 4], [5, 5], [4, 4]], [[4, 4], [4, 5], [0, 0]]]
-            ...     ),
-            ...     dynamic_values=torch.FloatTensor(
-            ...         [[[1, 2], [0, 0], [1.1, 2.1]], [[5, 6], [7, 0], [0, 0]]]
-            ...     ),
-            ...     dynamic_values_mask=torch.BoolTensor(
-            ...         [
-            ...             [[True, True], [False, False], [True, True]],
-            ...             [[True, True], [True, False], [False, False]],
-            ...         ]
-            ...     ),
-            ... )
+                    # False is that entire event is padding
+                    event_mask=torch.BoolTensor([
+                        [True, True, True],
+                        [True, True, False]
+                    ]),
+                    # static measurements, indices from a joint vocab
+                    # of all possible measurement type-value pairs
+                    static_indices=torch.LongTensor([
+                        [1, 2, 3, 7, 8],# e.g., 1 - gender/M
+                        [1, 2, 3, 7, 10],
+                    ]),
+                    dynamic_indices=torch.LongTensor([
+                        [[7, 8], [11, 10], [8, 7]],# 11 is medication/amoxicylin
+                        [[8, 7], [8 , 10], [0, 0]]
+                    ]),
+                    # if dynamic_values_mask is False,
+                    # this measurement is not numeric or not known or outlier
+                    dynamic_values=torch.FloatTensor([
+                        [[1.0, 2.0], [0.0, 0.0], [1.1, 2.1]],
+                        [[5.0, 6.0], [7.0, 0.0], [0.0, 0.0]]
+                    ]),
+                    # is_numeric or not known or outlier
+                    dynamic_values_mask=torch.BoolTensor(
+                        [
+                            [[True, True], [False, False], [True, True]],
+                            [[True, True], [True, False], [False, False]],
+                        ]
+                    )
+                    # types of measurements
+                    static_measurement_indices=torch.LongTensor([
+                        [1, 1, 2, 4, 5],  # 1 - gender
+                        [2, 2, 3, 4, 5],
+                    ]),
+                    dynamic_measurement_indices=torch.LongTensor([
+                        [[4, 4], [5, 5], [4, 4]],  # 5 is medication
+                        [[4, 4], [4, 5], [0, 0]]
+                    ]),
+                )
             >>> L = DataEmbeddingLayer(
             ...     n_total_embeddings=100,
             ...     out_dim=10,

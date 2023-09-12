@@ -46,14 +46,6 @@ class TestMetricsConfig(unittest.TestCase):
             },
             {
                 "msg": (
-                    "Should log only loss when split is present in include_metrics but only contains "
-                    "loss_parts."
-                ),
-                "include_metrics": {split: {MetricCategories.LOSS_PARTS: True}},
-                "want": True,
-            },
-            {
-                "msg": (
                     "Should not log only loss when split is present in include_metrics and contains other "
                     "metrics"
                 ),

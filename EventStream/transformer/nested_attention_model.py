@@ -60,9 +60,9 @@ class NestedAttentionGenerativeOutputLayer(GenerativeOutputLayerBase):
 
         Args:
             batch: The batch of data to process.
-            encoded: The encoded representation of the input data. This is of shape (batch size, sequence
-                length, dependency graph len, config.hidden_size). The last element of the dependency graph is
-                always the whole-event embedding, and the first element of the dependency graph is always
+            encoded: The encoded representation of the input data. This is of shape
+                [batch size, sequence length, dependency graph len, config.hidden_size]
+                The last element of the dependency graph is always the whole-event embedding, and the first element of the dependency graph is always
                 assumed to capture the time of the event.
             is_generation: Whether or not we are in generation mode. If so, the output predictions are for the
                 next event for both time and event contents; if not, then we shift the event contents
@@ -101,6 +101,7 @@ class NestedAttentionGenerativeOutputLayer(GenerativeOutputLayerBase):
         bsz, seq_len, dep_graph_len, _ = encoded.shape
 
         if is_generation:
+            # Needed for sampling from generated distributions that give you numerical values
             if dep_graph_el_generation_target is None or dep_graph_el_generation_target == 0:
                 dep_graph_loop = None
                 do_TTE = True
@@ -185,7 +186,8 @@ class NestedAttentionGenerativeOutputLayer(GenerativeOutputLayerBase):
                     regression_indices.update(regression_out[3])
 
         if do_TTE:
-            whole_event_encoded = encoded[:, :, -1, :]
+            whole_event_encoded = encoded[:, :, -1, :]  # cumulative sum that is done in the input layer is actually kind of important here
+
             TTE_LL_overall, TTE_dist, TTE_true = self.get_TTE_outputs(
                 batch,
                 whole_event_encoded,

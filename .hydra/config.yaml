@@ -1,0 +1,213 @@
+do_overwrite: false
+seed: 1
+config:
+  _target_: EventStream.transformer.config.StructuredTransformerConfig
+  event_types_idxmap: {}
+  measurement_configs: {}
+  do_split_embeddings: false
+  categorical_embedding_dim: 128
+  numerical_embedding_dim: 128
+  static_embedding_mode: sum_all
+  static_embedding_weight: 0.2340548896783647
+  dynamic_embedding_weight: 0.5
+  categorical_embedding_weight: 0.5201768914912629
+  numerical_embedding_weight: 0.5
+  do_normalize_by_measurement_index: false
+  structured_event_processing_mode: nested_attention
+  num_hidden_layers: 12
+  seq_attention_types:
+  - global
+  dep_graph_attention_types: null
+  seq_window_size: 30
+  dep_graph_window_size: null
+  TTE_generation_layer_type: exponential
+  TTE_lognormal_generation_num_components: 9
+  mean_log_inter_event_time_min: null
+  std_log_inter_event_time_min: null
+  init_std: 0.02
+  max_seq_len: 256
+  vocab_sizes_by_measurement: {}
+  vocab_offsets_by_measurement: {}
+  measurements_idxmap: {}
+  measurements_per_generative_mode: {}
+  measurements_per_dep_graph_level:
+  - - age
+    - time_of_day
+  - - event_type
+    - patientweight
+    - admission_type
+    - admission_location
+    - race
+    - language
+    - marital_status
+    - insurance
+    - careunit
+    - - lab_itemid
+      - categorical_only
+    - - infusion_itemid
+      - categorical_only
+  - - - lab_itemid
+      - numerical_only
+    - - infusion_itemid
+      - numerical_only
+  - - procedure_itemid
+    - medication
+    - icd_code
+    - discharge_location
+  vocab_size: 1
+  head_dim: 64
+  hidden_size: null
+  num_attention_heads: 8
+  attention_dropout: 0.1
+  input_dropout: 0.1
+  resid_dropout: 0.0
+  intermediate_size: 32
+  layer_norm_epsilon: 1.0e-05
+  activation_function: gelu
+  do_full_block_in_seq_attention: true
+  do_full_block_in_dep_graph_attention: false
+  use_cache: true
+  return_dict: true
+  output_hidden_states: false
+  output_attentions: false
+  torchscript: false
+  torch_dtype: null
+  use_bfloat16: false
+  tf_legacy_loss: false
+  pruned_heads: {}
+  tie_word_embeddings: true
+  is_encoder_decoder: false
+  is_decoder: false
+  cross_attention_hidden_size: null
+  add_cross_attention: false
+  tie_encoder_decoder: false
+  max_length: 20
+  min_length: 0
+  do_sample: false
+  early_stopping: false
+  num_beams: 1
+  num_beam_groups: 1
+  diversity_penalty: 0.0
+  temperature: 1.0
+  top_k: 50
+  top_p: 1.0
+  typical_p: 1.0
+  repetition_penalty: 1.0
+  length_penalty: 1.0
+  no_repeat_ngram_size: 0
+  encoder_no_repeat_ngram_size: 0
+  bad_words_ids: null
+  num_return_sequences: 1
+  chunk_size_feed_forward: 0
+  output_scores: false
+  return_dict_in_generate: false
+  forced_bos_token_id: null
+  forced_eos_token_id: null
+  remove_invalid_values: false
+  exponential_decay_length_penalty: null
+  suppress_tokens: null
+  begin_suppress_tokens: null
+  architectures: null
+  finetuning_task: null
+  id2label:
+    0: LABEL_0
+    1: LABEL_1
+  label2id:
+    LABEL_0: 0
+    LABEL_1: 1
+  tokenizer_class: null
+  prefix: null
+  bos_token_id: null
+  pad_token_id: null
+  eos_token_id: null
+  sep_token_id: null
+  decoder_start_token_id: null
+  task_specific_params: null
+  problem_type: null
+  _name_or_path: ''
+  transformers_version: 4.30.2
+  model_type: ''
+optimization_config:
+  init_lr: 0.001
+  end_lr: null
+  end_lr_frac_of_init_lr: 0.01
+  max_epochs: 100
+  batch_size: 8
+  validation_batch_size: 8
+  lr_frac_warmup_steps: 0.01
+  lr_num_warmup_steps: null
+  max_training_steps: null
+  lr_decay_power: 1.357682301746075
+  weight_decay: 0.01
+  patience: 5
+  gradient_accumulation: 4
+  num_dataloader_workers: 0
+data_config:
+  save_dir: !!python/object/apply:pathlib.PosixPath
+  - /
+  - mnt
+  - shared_home
+  - vlialin
+  - documents
+  - EventStreamGPT
+  - data
+  - MIMIC_IV
+  - ESD_06-13-23_150GB_10cpu-1
+  max_seq_len: 1024
+  min_seq_len: 10
+  seq_padding_side: RIGHT
+  subsequence_sampling_strategy: RANDOM
+  train_subset_size: FULL
+  train_subset_seed: null
+  task_df_name: null
+  do_include_start_time_min: false
+pretraining_metrics_config:
+  n_auc_thresholds: 50
+  do_skip_all_metrics: true
+  do_validate_args: false
+  include_metrics: {}
+final_validation_metrics_config:
+  n_auc_thresholds: 25
+  do_skip_all_metrics: false
+  do_validate_args: false
+  include_metrics:
+    TUNING:
+      LOSS_PARTS: true
+      TTE:
+        MSE: true
+        MSLE: true
+      CLASSIFICATION:
+        AUROC:
+        - WEIGHTED
+        ACCURACY: true
+      REGRESSION:
+        MSE: true
+    HELD_OUT:
+      LOSS_PARTS: true
+      TTE:
+        MSE: true
+        MSLE: true
+      CLASSIFICATION:
+        AUROC:
+        - WEIGHTED
+        ACCURACY: true
+      REGRESSION:
+        MSE: true
+trainer_config:
+  accelerator: auto
+  devices: auto
+  detect_anomaly: false
+  default_root_dir: ${save_dir}/model_checkpoints
+  log_every_n_steps: 1
+experiment_dir: /mnt/shared_home/vlialin/documents/EventStreamGPT/models/manual_run_jul5_7pm
+save_dir: ${experiment_dir}/pretrain/${now:%Y-%m-%d_%H-%M-%S}
+wandb_logger_kwargs:
+  name: null
+  project: MIMIC_FMs_public
+  team: null
+  log_model: false
+  do_log_graph: false
+wandb_experiment_config_kwargs:
+  save_dir: ${save_dir}
+num_dataloader_workers: 8
+do_final_validation_on_metrics: true

@@ -1,0 +1,32 @@
+defaults:
+  - pretrain_config
+  - _self_
+
+do_overwrite: false
+
+seed: 1
+
+data:
+  save_dir: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1
+  max_seq_len: 190
+  min_seq_len: 4
+
+model: path_to_config.yaml
+
+training:
+  max_epochs: 1
+  total_batch_size: 64
+
+  optimizer:
+    type: AdamW
+    weight_decay: 0.1
+  scheduler:
+    type: cosine
+    max_lr: 1e-3
+    warmup_ratio: 0.05
+    min_lr_ratio: 0.1
+
+  wandb_logger_kwargs:
+    project: MIMIC_FMs_public
+    tags: debug,1B_model
+    comment: "just checking out the new config format"

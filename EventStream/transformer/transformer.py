@@ -473,11 +473,13 @@ class StructuredTransformerBlock(nn.Module):
         super().__init__()
 
         if config.do_full_block_in_seq_attention:
+            # usual case
             seq_block = InnerBlock(config, layer_id, is_seq=True)
         else:
             seq_block = InnerAttention(config, layer_id, is_seq=True)
 
         if config.do_full_block_in_dep_graph_attention:
+            # usual case
             dep_graph_block = InnerBlock(config, layer_id, is_seq=False)
         else:
             dep_graph_block = InnerAttention(config, layer_id, is_seq=False)
@@ -908,18 +910,24 @@ class NestedAttentionPointProcessInputLayer(torch.nn.Module):
         """
 
         embed = self.data_embedding_layer(batch)
-        # `data_embed` is of shape (batch_size, sequence_length, dep_graph_len config.hidden_size).
+        # `data_embed` is of shape (batch_size, sequence_length=num_events, dep_graph_len=[sum(time), sum(lab/categorial), sum(lab/numerical) + sum(medication) + sum(procedure)], config.hidden_size).
+        # the time here is the actual time information
+        # time is also an embedding bag that has year, age, time of day, ...
 
-        time_embed = self.time_embedding_layer(batch)
+        time_embed = self.time_embedding_layer(batch)  # minutes between the events that are mapped to positional embeddings
         # `time_embed` is of shape (batch_size, sequence_length, config.hidden_size).
 
         # In this model, the first entry of the dependency graph *always* contains all the and only the time
         # dependent measures, so we combine the time_embedding in at this position as well.
-        embed[:, :, 0] += time_embed
+        embed[:, :, 0, :] += time_embed  # [batch_size, sequence_length, dep_graph_len, hidden]
+
+        # changed the above from `embed[:, :, 0] += time_embed`
 
         # We perform a cumsum so that even in the first layer, our final embedding of the dep graph reflects
         # the entire event.
         embed = embed.cumsum(dim=2)
+
+        # [t, e1, e2, e3] -> [t, e1 + t, e2 + e1 + t, e3 + e2 + e1 + t]
 
         if dep_graph_el_generation_target is not None:
             # This is used in generation to take advantage of the cache, where we only want to process a
@@ -1103,7 +1111,7 @@ class NestedAttentionPointProcessTransformer(StructuredTransformerPreTrainedMode
             dep_graph_past = tuple([None] * len(self.h))
 
         all_hidden_states = () if output_hidden_states else None
-        for i, (block, layer_past, dep_graph_layer_past) in enumerate(zip(self.h, past, dep_graph_past)):
+        for i, (layer, layer_kv_cache, dep_graph_kv_cache) in enumerate(zip(self.h, past, dep_graph_past)):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -1130,19 +1138,19 @@ class NestedAttentionPointProcessTransformer(StructuredTransformerPreTrainedMode
                     hidden_states,
                     seq_attention_mask,
                     dict(
-                        layer_past=layer_past,
+                        layer_past=layer_kv_cache,
                         head_mask=head_mask[i],
                         use_cache=False,
                         output_attentions=output_attentions,
                     ),
                     dict(
-                        layer_past=dep_graph_layer_past,
+                        layer_past=dep_graph_kv_cache,
                         use_cache=False,
                         output_attentions=output_attentions,
                     ),
                 )
 
-                outputs = torch.utils.checkpoint.checkpoint(create_custom_forward(block), *args)
+                outputs = torch.utils.checkpoint.checkpoint(create_custom_forward(layer), *args)
             else:
                 kwargs = dict(
                     hidden_states=hidden_states,
@@ -1151,18 +1159,18 @@ class NestedAttentionPointProcessTransformer(StructuredTransformerPreTrainedMode
                     prepend_graph_with_history_embeddings=prepend_graph_with_history_embeddings,
                     update_last_graph_el_to_history_embedding=update_last_graph_el_to_history_embedding,
                     seq_module_kwargs=dict(
-                        layer_past=layer_past,
+                        layer_past=layer_kv_cache,
                         head_mask=head_mask[i],
                         use_cache=update_seq_cache,
                         output_attentions=output_attentions,
                     ),
                     dep_graph_module_kwargs=dict(
-                        layer_past=dep_graph_layer_past,
+                        layer_past=dep_graph_kv_cache,
                         use_cache=update_dep_graph_cache,
                         output_attentions=output_attentions,
                     ),
                 )
-                outputs = block(**kwargs)
+                outputs = layer(**kwargs)
 
             hidden_states, extra_return_info = outputs
 

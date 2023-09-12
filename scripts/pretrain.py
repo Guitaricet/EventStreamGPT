@@ -24,7 +24,7 @@ from EventStream.transformer.lightning_modules.generative_modeling import (
 torch.set_float32_matmul_precision("high")
 
 
-@hydra.main(version_base=None, config_name="pretrain_config")
+@hydra.main()
 def main(cfg: PretrainConfig):
     if type(cfg) is not PretrainConfig:
         cfg = hydra.utils.instantiate(cfg, _convert_="object")

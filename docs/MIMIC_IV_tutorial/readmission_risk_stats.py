@@ -70,7 +70,7 @@ prevalence = readmission_30d_all.select(pl.col("30d_readmission").mean()).collec
 print(f"The {COHORT_NAME} cohort has a {prevalence*100:.1f}% 30d readmission prevalence.")
 
 # Loading events from \
-# /n/data1/hms/dbmi/zaklab/RAMMS/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1/events_df.parquet...
+# /mnt/shared_home/vlialin/documents/EventStreamGPT/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1/events_df.parquet...
 # The MIMIC_IV/ESD_06-13-23_150GB_10cpu-1 cohort has a 32.6% 30d readmission prevalence.
 # peak memory: 912.86 MiB, increment: 496.57 MiB
 # CPU times: user 7.19 s, sys: 1.34 s, total: 8.53 s

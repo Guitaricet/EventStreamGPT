@@ -1493,10 +1493,8 @@ class GenerativeOutputLayerBase(torch.nn.Module):
                     print(f"Failed to get loss for {measurement}: {e}!")
                     print(f"vocab_start: {vocab_start}, vocab_end: {vocab_end}")
                     print(f"max(labels): {labels.max()}, min(labels): {labels.min()}")
-                    print(
-                        f"max(dynamic_indices*tensor_idx): {((dynamic_indices*tensor_idx).max())}, "
-                        f"min(dynamic_indices*tensor_idx): {((dynamic_indices*tensor_idx).min())}"
-                    )
+                    print(f"max(dynamic_indices*tensor_idx): {((dynamic_indices*tensor_idx).max())}, "
+                          f"min(dynamic_indices*tensor_idx): {((dynamic_indices*tensor_idx).min())}")
                     print(f"max(tensor_idx.sum(-1)): {tensor_idx.sum(-1).max()}")
                     print(f"scores.shape: {scores.shape}")
                     raise

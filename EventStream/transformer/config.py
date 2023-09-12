@@ -47,9 +47,6 @@ class MetricCategories(StrEnum):
     Used for configuring what metrics to track.
     """
 
-    LOSS_PARTS = enum.auto()
-    """Track the different loss components."""
-
     TTE = "TTE"
     """Track metrics related to time-to-event prediction."""
 
@@ -133,7 +130,6 @@ class MetricsConfig(JSONableMixin):
         default_factory=lambda: (
             {
                 Split.TUNING: {
-                    MetricCategories.LOSS_PARTS: True,
                     MetricCategories.TTE: {Metrics.MSE: True, Metrics.MSLE: True},
                     MetricCategories.CLASSIFICATION: {
                         Metrics.AUROC: [Averaging.WEIGHTED],
@@ -142,7 +138,6 @@ class MetricsConfig(JSONableMixin):
                     MetricCategories.REGRESSION: {Metrics.MSE: True},
                 },
                 Split.HELD_OUT: {
-                    MetricCategories.LOSS_PARTS: True,
                     MetricCategories.TTE: {Metrics.MSE: True, Metrics.MSLE: True},
                     MetricCategories.CLASSIFICATION: {
                         Metrics.AUROC: [Averaging.WEIGHTED],
@@ -164,10 +159,6 @@ class MetricsConfig(JSONableMixin):
             self.do_skip_all_metrics
             or split not in self.include_metrics
             or not self.include_metrics[split]
-            or (
-                (len(self.include_metrics[split]) == 1)
-                and (MetricCategories.LOSS_PARTS in self.include_metrics[split])
-            )
         ):
             return True
         else:
