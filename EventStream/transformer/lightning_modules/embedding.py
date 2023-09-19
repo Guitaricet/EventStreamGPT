@@ -7,7 +7,7 @@ import torch
 
 from ...data.pytorch_dataset import PytorchDataset
 from ..config import StructuredEventProcessingMode, StructuredTransformerConfig
-from ..transformer import (
+from ..modeling_transformer import (
     ConditionallyIndependentPointProcessTransformer,
     NestedAttentionPointProcessTransformer,
     StructuredTransformerPreTrainedModel,

@@ -14,7 +14,7 @@ from .model_output import (
     GenerativeSequenceModelOutput,
     GenerativeSequenceModelPredictions,
 )
-from .transformer import (
+from .modeling_transformer import (
     NestedAttentionPointProcessTransformer,
     StructuredTransformerPreTrainedModel,
     expand_mask,

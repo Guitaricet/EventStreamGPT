@@ -25,7 +25,7 @@ from EventStream.transformer.nested_attention_model import (
     NAPPTForGenerativeSequenceModeling,
     NestedAttentionGenerativeOutputLayer,
 )
-from EventStream.transformer.transformer import expand_mask
+from EventStream.transformer.modeling_transformer import expand_mask
 
 from ..utils import ConfigComparisonsMixin, MockModule
 

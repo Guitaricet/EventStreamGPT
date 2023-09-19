@@ -13,7 +13,7 @@ from .model_output import (
     GenerativeSequenceModelOutput,
     GenerativeSequenceModelPredictions,
 )
-from .transformer import (
+from .modeling_transformer import (
     ConditionallyIndependentPointProcessTransformer,
     StructuredTransformerPreTrainedModel,
     expand_mask,

@@ -4,7 +4,7 @@ import torch
 from ..data.types import PytorchBatch
 from .config import StructuredEventProcessingMode, StructuredTransformerConfig
 from .model_output import StreamClassificationModelOutput
-from .transformer import (
+from .modeling_transformer import (
     ConditionallyIndependentPointProcessTransformer,
     NestedAttentionPointProcessTransformer,
     StructuredTransformerPreTrainedModel,

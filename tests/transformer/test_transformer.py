@@ -13,7 +13,7 @@ from EventStream.transformer.config import (
     StructuredTransformerConfig,
 )
 from EventStream.transformer.model_output import TransformerOutputWithPast
-from EventStream.transformer.transformer import (
+from EventStream.transformer.modeling_transformer import (
     ConditionallyIndependentPointProcessTransformer,
     NestedAttentionPointProcessTransformer,
     expand_mask,

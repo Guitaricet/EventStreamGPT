@@ -25,7 +25,7 @@ from EventStream.transformer.model_output import (
     GenerativeSequenceModelOutput,
     GenerativeSequenceModelPredictions,
 )
-from EventStream.transformer.transformer import expand_mask
+from EventStream.transformer.modeling_transformer import expand_mask
 
 from ..utils import ConfigComparisonsMixin, MockModule
 
