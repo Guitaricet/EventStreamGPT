@@ -230,7 +230,7 @@ class NestedAttentionGenerativeOutputLayer(GenerativeOutputLayerBase):
         )
 
 
-class NAPPTForGenerativeSequenceModeling(StructuredGenerationMixin, StructuredTransformerPreTrainedModel):
+class NestedAttnModelForGenerativeSequenceModeling(StructuredGenerationMixin, StructuredTransformerPreTrainedModel):
     """The end-to-end model for nested attention generative sequence modelling.
 
     This model is a subclass of :class:`~transformers.StructuredTransformerPreTrainedModel` and is designed

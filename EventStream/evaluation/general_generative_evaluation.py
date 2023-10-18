@@ -15,14 +15,14 @@ from ..data.config import PytorchDatasetConfig, SeqPaddingSide
 from ..data.pytorch_dataset import PytorchDataset
 from ..data.types import PytorchBatch
 from ..transformer.conditionally_independent_model import (
-    CIPPTForGenerativeSequenceModeling,
+    CondIndepModelForGenerativeSequenceModeling,
 )
 from ..transformer.config import (
     OptimizationConfig,
     StructuredEventProcessingMode,
     StructuredTransformerConfig,
 )
-from ..transformer.nested_attention_model import NAPPTForGenerativeSequenceModeling
+from ..transformer.nested_attention_model import NestedAttnModelForGenerativeSequenceModeling
 from ..utils import hydra_dataclass, task_wrapper
 
 
@@ -59,11 +59,11 @@ class ESTForTrajectoryGeneration(L.LightningModule):
         if pretrained_weights_fp is None:
             raise ValueError("pretrained_weights_fp must be specified")
         elif self.config.structured_event_processing_mode == StructuredEventProcessingMode.NESTED_ATTENTION:
-            self.model = NAPPTForGenerativeSequenceModeling.from_pretrained(
+            self.model = NestedAttnModelForGenerativeSequenceModeling.from_pretrained(
                 pretrained_weights_fp, config=config
             )
         else:
-            self.model = CIPPTForGenerativeSequenceModeling.from_pretrained(
+            self.model = CondIndepModelForGenerativeSequenceModeling.from_pretrained(
                 pretrained_weights_fp, config=config
             )
 

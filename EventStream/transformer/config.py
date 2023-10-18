@@ -492,9 +492,7 @@ class StructuredTransformerConfig(PretrainedConfig):
         numerical_embedding_weight: float = 0.5,
         do_normalize_by_measurement_index: bool = False,
         # Model configuration
-        structured_event_processing_mode: StructuredEventProcessingMode = (
-            StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT
-        ),
+        structured_event_processing_mode: StructuredEventProcessingMode = StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT,
         hidden_size: int | None = None,
         head_dim: int | None = 64,
         num_hidden_layers: int = 2,
@@ -512,6 +510,10 @@ class StructuredTransformerConfig(PretrainedConfig):
         layer_norm_epsilon: float = 1e-5,
         do_full_block_in_dep_graph_attention: bool | None = True,
         do_full_block_in_seq_attention: bool | None = False,
+        # Retreival Model configuration
+        retreival_augmented: bool = False,
+        retreival_layer_idx: int | None = None,  # first layer that is a retreival layer, by default split in the middle
+        chunked_cross_attention_chunk_len: int | None = None,
         # Model output configuration
         TTE_generation_layer_type: TimeToEventGenerationHeadType = "exponential",
         TTE_lognormal_generation_num_components: int | None = None,
@@ -615,26 +617,13 @@ class StructuredTransformerConfig(PretrainedConfig):
 
             case StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
                 if measurements_per_dep_graph_level is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "measurements_per_dep_graph_level", measurements_per_dep_graph_level
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("measurements_per_dep_graph_level", measurements_per_dep_graph_level))
                     measurements_per_dep_graph_level = None
                 if do_full_block_in_seq_attention is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "do_full_block_in_seq_attention", do_full_block_in_seq_attention
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("do_full_block_in_seq_attention", do_full_block_in_seq_attention))
                     do_full_block_in_seq_attention = None
                 if do_full_block_in_dep_graph_attention is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "do_full_block_in_dep_graph_attention",
-                            do_full_block_in_dep_graph_attention,
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("do_full_block_in_dep_graph_attention", do_full_block_in_dep_graph_attention))
                     do_full_block_in_dep_graph_attention = None
                 if dep_graph_attention_types is not None:
                     print(extra_param_err_tmpl.format("dep_graph_attention_types", dep_graph_attention_types))
@@ -672,8 +661,16 @@ class StructuredTransformerConfig(PretrainedConfig):
             raise ValueError(f"num_hidden_layers must be > 0! Got {num_hidden_layers}.")
         self.num_hidden_layers = num_hidden_layers
 
+        self.retreival_augmented = retreival_augmented
+        self.retreival_layer_idx = retreival_layer_idx
+        if retreival_layer_idx is None:
+            self.retreival_layer_idx = num_hidden_layers // 2
+
         if seq_attention_types is None:
             seq_attention_types = ["local", "global"]
+        if retreival_augmented and chunked_cross_attention_chunk_len is None:
+            raise ValueError("chunked_cross_attention_chunk_len must be specified if retreival_augmented is True")
+        self.chunked_cross_attention_chunk_len = chunked_cross_attention_chunk_len
 
         self.seq_attention_types = seq_attention_types
         self.seq_attention_layers = self.expand_attention_types_params(seq_attention_types)
@@ -739,26 +736,13 @@ class StructuredTransformerConfig(PretrainedConfig):
 
             case TimeToEventGenerationHeadType.EXPONENTIAL:
                 if TTE_lognormal_generation_num_components is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "TTE_lognormal_generation_num_components",
-                            TTE_lognormal_generation_num_components,
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("TTE_lognormal_generation_num_components", TTE_lognormal_generation_num_components))
                     TTE_lognormal_generation_num_components = None
                 if mean_log_inter_event_time_min is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "mean_log_inter_event_time_min", mean_log_inter_event_time_min
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("mean_log_inter_event_time_min", mean_log_inter_event_time_min))
                     mean_log_inter_event_time_min = None
                 if std_log_inter_event_time_min is not None:
-                    print(
-                        extra_param_err_tmpl.format(
-                            "std_log_inter_event_time_min", std_log_inter_event_time_min
-                        )
-                    )
+                    print(extra_param_err_tmpl.format("std_log_inter_event_time_min", std_log_inter_event_time_min))
                     std_log_inter_event_time_min = None
 
             case _:

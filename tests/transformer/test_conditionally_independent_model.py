@@ -12,7 +12,7 @@ import torch
 from EventStream.data.config import MeasurementConfig
 from EventStream.data.types import DataModality, PytorchBatch, TemporalityType
 from EventStream.transformer.conditionally_independent_model import (
-    CIPPTForGenerativeSequenceModeling,
+    CondIndepModelForGenerativeSequenceModeling,
     ConditionallyIndependentGenerativeOutputLayer,
 )
 from EventStream.transformer.config import (
@@ -380,20 +380,20 @@ class TestConditionallyIndependentGenerativeOutputLayer(ConfigComparisonsMixin, 
                     self.assertNestedCalledWith(M.get_TTE_outputs, TTE_calls)
 
 
-class TestCIPPTForGenerativeSequenceModeling(ConfigComparisonsMixin, unittest.TestCase):
+class TestCondIndepModelForGenerativeSequenceModeling(ConfigComparisonsMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
 
         self.config = StructuredTransformerConfig(**CI_CONFIG_KWARGS)
 
-        self.M = CIPPTForGenerativeSequenceModeling(self.config).cpu()
+        self.M = CondIndepModelForGenerativeSequenceModeling(self.config).cpu()
         self.M.eval()  # So layernorm and dropout don't affect anything.
 
         self.batch = PytorchBatch(**copy.deepcopy(BASE_BATCH))
 
     def test_constructs(self):
         with self.assertRaises(ValueError):
-            CIPPTForGenerativeSequenceModeling(StructuredTransformerConfig(**NA_CONFIG_KWARGS))
+            CondIndepModelForGenerativeSequenceModeling(StructuredTransformerConfig(**NA_CONFIG_KWARGS))
 
     def test_prepare_inputs_for_generation(self):
         default_batch = PytorchBatch(

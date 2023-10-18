@@ -19,6 +19,7 @@ from .modeling_transformer import (
     expand_mask,
     time_from_deltas,
 )
+from .modeling_retro import ConditionallyIndependentRetreivalAugTransformer
 
 
 class ConditionallyIndependentGenerativeOutputLayer(GenerativeOutputLayerBase):
@@ -161,7 +162,7 @@ class ConditionallyIndependentGenerativeOutputLayer(GenerativeOutputLayerBase):
         )
 
 
-class CIPPTForGenerativeSequenceModeling(StructuredGenerationMixin, StructuredTransformerPreTrainedModel):
+class CondIndepModelForGenerativeSequenceModeling(StructuredGenerationMixin, StructuredTransformerPreTrainedModel):
     """The end-to-end model for conditionally independent generative sequence modelling.
 
     This model is a subclass of :class:`~transformers.StructuredTransformerPreTrainedModel` and is designed
@@ -189,7 +190,11 @@ class CIPPTForGenerativeSequenceModeling(StructuredGenerationMixin, StructuredTr
         if config.structured_event_processing_mode != StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
             raise ValueError(f"{config.structured_event_processing_mode} invalid!")
 
-        self.encoder = ConditionallyIndependentPointProcessTransformer(config)
+        if config.retreival_augmented:
+            self.encoder = ConditionallyIndependentRetreivalAugTransformer(config)
+        else:
+            self.encoder = ConditionallyIndependentPointProcessTransformer(config)
+
         self.output_layer = ConditionallyIndependentGenerativeOutputLayer(config)
 
         # Initialize weights and apply final processing

@@ -134,6 +134,12 @@ class PytorchBatch:
             for each subject in the batch relative to their raw data.
         subject_id: A long tensor of shape (batch_size,) indicating the subject ID of each member of the
             batch.
+        retreived_hidden_states: A float tensor of shape (batch_size, n_chunks, n_neighbors, neighbor_len, hidden)
+            containing the hidden states of the retreived text.
+            n_chunks: the number of queires for each text. During generation, text performs a query every chunk_length tokens.
+                read more more in the RETRO paper: https://arxiv.org/abs/2112.04426
+            n_neighbors: the number of nearest neighbors retreived for each query
+            neighbor_len: the length of each neighbor. Can be arbitrary, just needs to be padded to the same length in the tensor.
         stream_labels: A dictionary mapping task names to label LongTensors of shape (batch_size,) providing
             labels for the associated tasks for the sequences in the batch. Is only used during fine-tuning or
             zero-shot evaluation runs.
@@ -159,6 +165,8 @@ class PytorchBatch:
     start_idx: torch.LongTensor | None = None
     end_idx: torch.LongTensor | None = None
     subject_id: torch.LongTensor | None = None
+
+    retreived_hidden_states: torch.FloatTensor | None = None
 
     stream_labels: dict[str, torch.FloatTensor | torch.LongTensor] | None = None
 

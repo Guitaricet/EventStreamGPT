@@ -27,7 +27,7 @@ from ...data.config import PytorchDatasetConfig
 from ...data.pytorch_dataset import PytorchDataset
 from ...data.types import DataModality, PytorchBatch
 from ...utils import hydra_dataclass, task_wrapper
-from ..conditionally_independent_model import CIPPTForGenerativeSequenceModeling
+from ..conditionally_independent_model import CondIndepModelForGenerativeSequenceModeling
 from ..config import (
     Averaging,
     MetricCategories,
@@ -39,7 +39,7 @@ from ..config import (
     StructuredTransformerConfig,
 )
 from ..model_output import GenerativeSequenceModelOutput
-from ..nested_attention_model import NAPPTForGenerativeSequenceModeling
+from ..nested_attention_model import NestedAttnModelForGenerativeSequenceModeling
 from ..utils import expand_indexed_regression, str_summary
 
 
@@ -98,9 +98,9 @@ class ESTForGenerativeSequenceModelingLM(L.LightningModule):
 
         match config.structured_event_processing_mode:
             case StructuredEventProcessingMode.NESTED_ATTENTION:
-                model_cls = NAPPTForGenerativeSequenceModeling
+                model_cls = NestedAttnModelForGenerativeSequenceModeling
             case StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
-                model_cls = CIPPTForGenerativeSequenceModeling
+                model_cls = CondIndepModelForGenerativeSequenceModeling
             case _:
                 raise ValueError(
                     f"Unsupported structured event processing mode: {config.structured_event_processing_mode}"

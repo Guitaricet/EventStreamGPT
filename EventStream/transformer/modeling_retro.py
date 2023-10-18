@@ -286,7 +286,7 @@ class ChunkedCrossAttention(nn.Module):
             return q
 
         # TODO: add positional information to q and kv
-    
+
         # Remove the first chunk_len - 1 embeddings.
         # The input pays attention to neighbors retrieved and encoded using the past tokens only;
         # so that there is no information leakage.
@@ -447,6 +447,8 @@ class TransformerBlock(nn.Module):
         hidden_states = residual + feed_forward_hidden_states
 
         if self.cross_attn is not None:
+            if retreived_hidden_states is None:
+                raise ValueError("retreived_hidden_states must be provided for chunked cross attention (second half of the model layers)")
             # TODO: support caching
             residual = hidden_states
             hidden_states = self.cross_attn_ln(hidden_states)
@@ -720,12 +722,7 @@ class ConditionallyIndependentPointProcessInputLayer(torch.nn.Module):
             categorical_weight=config.categorical_embedding_weight,
             numerical_weight=config.numerical_embedding_weight,
         )
-        if config.do_use_learnable_sinusoidal_ATE:
-            self.time_embedding_layer = LearnableFrequencySinusoidalTemporalPositionEncoding(
-                embedding_dim=config.hidden_size
-            )
-        else:
-            self.time_embedding_layer = TemporalPositionEncoding(embedding_dim=config.hidden_size)
+        self.time_embedding_layer = TemporalPositionEncoding(embedding_dim=config.hidden_size)
         self.embedding_dropout = torch.nn.Dropout(p=config.input_dropout)
 
     def forward(self, batch: PytorchBatch) -> torch.Tensor:
@@ -747,7 +744,7 @@ class ConditionallyIndependentPointProcessInputLayer(torch.nn.Module):
         return self.embedding_dropout(embed)
 
 
-class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTrainedModel):
+class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTrainedModel):
     """A transformer model specifically for conditionally independent point processes.
 
     This model uses an input layer to generate embeddings from an event-stream PyTorch dataset, and
@@ -769,8 +766,10 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
         if config.structured_event_processing_mode != StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
             raise ValueError(f"{config.structured_event_processing_mode} invalid!")
 
-        self.h = nn.ModuleList(
-            [TransformerBlock(config, layer_id=i, is_seq=True) for i in range(config.num_hidden_layers)]
+        first_retreival_block = config.retreival_layer_idx
+        self.layers = nn.ModuleList(
+            [TransformerBlock(config, layer_id=i, is_seq=True, is_retreival_block=i >= first_retreival_block)
+             for i in range(config.num_hidden_layers)]
         )
 
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
@@ -818,7 +817,7 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if past is None:
-            past = tuple([None] * len(self.h))
+            past = tuple([None] * len(self.layers))
 
         if input_embeds is None:
             assert batch is not None
@@ -844,7 +843,7 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
 
         all_self_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
-        for i, (block, layer_past) in enumerate(zip(self.h, past)):
+        for i, (layer, kv_cache) in enumerate(zip(self.layers, past)):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -864,26 +863,37 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
 
                 # We do this twice because the checkpointed process can't take keyword args, which is safer
                 # and cleaner, in my opinion.
+                # TODO: static_kv_first is always False here (?)
                 args = (
                     hidden_states,
                     seq_attention_mask,
-                    layer_past,
+                    kv_cache,
                     head_mask[i],
                     use_cache,
                     output_attentions,
+                    False, # static_kv_first
+                    batch.retreived_hidden_states,
                 )
+                # hidden_states,
+                # attention_mask=None,
+                # layer_past=None,
+                # head_mask=None,
+                # use_cache=False,
+                # output_attentions=False,
+                # static_kv_first: bool = False,
+                # retreived_hidden_states: torch.Tensor | None = None,
 
-                outputs = torch.utils.checkpoint.checkpoint(create_custom_forward(block), *args)
+                outputs = torch.utils.checkpoint.checkpoint(create_custom_forward(layer), *args)
             else:
-                kwargs = dict(
+                outputs = layer(
                     hidden_states=hidden_states,
                     attention_mask=seq_attention_mask,
-                    layer_past=layer_past,
+                    layer_past=kv_cache,
                     head_mask=head_mask[i],
                     use_cache=use_cache,
                     output_attentions=output_attentions,
+                    retreived_hidden_states=batch.retreived_hidden_states,
                 )
-                outputs = block(**kwargs)
 
             hidden_states, extra_return_info = outputs
 

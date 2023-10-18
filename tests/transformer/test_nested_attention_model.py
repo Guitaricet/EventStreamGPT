@@ -22,7 +22,7 @@ from EventStream.transformer.model_output import (
     GenerativeSequenceModelPredictions,
 )
 from EventStream.transformer.nested_attention_model import (
-    NAPPTForGenerativeSequenceModeling,
+    NestedAttnModelForGenerativeSequenceModeling,
     NestedAttentionGenerativeOutputLayer,
 )
 from EventStream.transformer.modeling_transformer import expand_mask
@@ -450,20 +450,20 @@ class TestNestedAttentionGenerativeOutputLayer(ConfigComparisonsMixin, unittest.
                     self.assertNestedCalledWith(M.get_TTE_outputs, TTE_calls)
 
 
-class TestNAPPTForGenerativeSequenceModeling(ConfigComparisonsMixin, unittest.TestCase):
+class TestNestedAttnModelForGenerativeSequenceModeling(ConfigComparisonsMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
 
         self.config = StructuredTransformerConfig(**NA_CONFIG_KWARGS)
 
-        self.M = NAPPTForGenerativeSequenceModeling(self.config).cpu()
+        self.M = NestedAttnModelForGenerativeSequenceModeling(self.config).cpu()
         self.M.eval()  # So layernorm and dropout don't affect anything.
 
         self.batch = PytorchBatch(**copy.deepcopy(BASE_BATCH))
 
     def test_constructs(self):
         with self.assertRaises(ValueError):
-            NAPPTForGenerativeSequenceModeling(StructuredTransformerConfig(**CI_CONFIG_KWARGS))
+            NestedAttnModelForGenerativeSequenceModeling(StructuredTransformerConfig(**CI_CONFIG_KWARGS))
 
     def test_prepare_inputs_for_generation(self):
         default_batch = PytorchBatch(
