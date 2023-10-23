@@ -736,14 +736,10 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
             A tuple containing hidden states, or a TransformerOutputWithPast object if return_dict is True.
         """
 
-        output_attentions = (
-            output_attentions if output_attentions is not None else self.config.output_attentions
-        )
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_attentions = output_attentions or self.config.output_attentions
+        output_hidden_states = output_hidden_states or self.config.output_hidden_states
+        use_cache = use_cache or self.config.use_cache
+        return_dict = return_dict or self.config.use_return_dict
 
         if past is None:
             past = tuple([None] * len(self.h))
@@ -755,9 +751,7 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
         else:
             assert batch is None, "Can't specify both input_embeds and batch."
 
-        torch._assert(
-            ~torch.isnan(input_embeds).any(), f"{torch.isnan(input_embeds).sum()} NaNs in input_embeds"
-        )
+        torch._assert(~torch.isnan(input_embeds).any(), f"{torch.isnan(input_embeds).sum()} NaNs in input_embeds")
 
         if seq_attention_mask is None and batch is not None and batch.get("event_mask", None) is not None:
             seq_attention_mask = expand_mask(batch["event_mask"], input_embeds.dtype)
@@ -780,10 +774,7 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
 
             if self.gradient_checkpointing and self.training:
                 if use_cache:
-                    logger.warning(
-                        "`use_cache=True` is incompatible with gradient checkpointing. "
-                        "Setting `use_cache=False`..."
-                    )
+                    logger.warning("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
                     use_cache = False
 
                 def create_custom_forward(module):
@@ -792,8 +783,7 @@ class ConditionallyIndependentPointProcessTransformer(StructuredTransformerPreTr
 
                     return custom_forward
 
-                # We do this twice because the checkpointed process can't take keyword args, which is safer
-                # and cleaner, in my opinion.
+                # We do this twice because the checkpointed process can't take keyword args, which is safer and cleaner, in my opinion.
                 args = (
                     hidden_states,
                     seq_attention_mask,

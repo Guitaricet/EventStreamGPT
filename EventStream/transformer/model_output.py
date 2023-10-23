@@ -226,6 +226,17 @@ class TransformerOutputWithPast(ModelOutput):
 
 
 @dataclass
+class RetreivalTransformerMiddleLayersOutput(ModelOutput):
+    last_hidden_state: torch.FloatTensor = None
+    past_key_values: tuple[tuple[torch.FloatTensor]] | dict[str, tuple[torch.FloatTensor]] | None = None
+    hidden_states: tuple[torch.FloatTensor] | None = None
+    attentions: tuple[torch.FloatTensor] | None = None
+
+    all_hidden_states: tuple[torch.FloatTensor] | None = None
+    all_self_attentions: tuple[torch.FloatTensor] | None = None
+
+
+@dataclass
 class GenerativeSequenceModelLosses(ModelOutput):
     """Holds losses data for a Generative Sequence Model.
 

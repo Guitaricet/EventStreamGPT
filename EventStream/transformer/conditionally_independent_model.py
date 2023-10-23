@@ -200,6 +200,14 @@ class CondIndepModelForGenerativeSequenceModeling(StructuredGenerationMixin, Str
         # Initialize weights and apply final processing
         self.post_init()
 
+    def first_half_forward(self, *args, **kwargs):
+        # only for the retreival augmented model
+        return self.encoder.first_half_forward(*args, **kwargs)
+    
+    def second_half_forward(self, *args, **kwargs):
+        # only for the retreival augmented model
+        return self.encoder.second_half_forward(*args, **kwargs)
+
     def prepare_inputs_for_generation(
         self, batch: PytorchBatch, past: tuple | None = None, **kwargs
     ) -> dict[str, Any]:

@@ -16,7 +16,7 @@ from transformers.utils import logging
 from ..data.data_embedding_layer import DataEmbeddingLayer, MeasIndexGroupOptions
 from ..data.types import PytorchBatch
 from .config import StructuredEventProcessingMode, StructuredTransformerConfig
-from .model_output import TransformerOutputWithPast
+from .model_output import TransformerOutputWithPast, RetreivalTransformerMiddleLayersOutput
 from .structured_attention import StructuredAttention
 
 logger = logging.get_logger(__name__)
@@ -761,24 +761,29 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
     def __init__(self, config: StructuredTransformerConfig):
         super().__init__(config)
 
+        self.config = config
         self.embed_dim = config.hidden_size
         self.input_layer = ConditionallyIndependentPointProcessInputLayer(config)
         if config.structured_event_processing_mode != StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
             raise ValueError(f"{config.structured_event_processing_mode} invalid!")
 
-        first_retreival_block = config.retreival_layer_idx
-        self.layers = nn.ModuleList(
-            [TransformerBlock(config, layer_id=i, is_seq=True, is_retreival_block=i >= first_retreival_block)
-             for i in range(config.num_hidden_layers)]
+        self.non_retreival_layers = nn.ModuleList(
+            [TransformerBlock(config, layer_id=i, is_seq=True, is_retreival_block=False)
+             for i in range(config.retreival_layer_idx)]
+        )
+        self.retreival_layers = nn.ModuleList(
+            [TransformerBlock(config, layer_id=i, is_seq=True, is_retreival_block=True)
+             for i in range(config.retreival_layer_idx, config.num_hidden_layers)]
         )
 
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.ln_retreival = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         self.post_init()
 
-    def forward(
+    def first_half_forward(
         self,
         batch: PytorchBatch | None = None,
         input_embeds: torch.Tensor | None = None,
@@ -788,36 +793,28 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         use_cache: bool | None = None,
         output_attentions: bool | None = None,
         output_hidden_states: bool | None = None,
-        return_dict: bool | None = None,
-    ) -> TransformerOutputWithPast:
-        """Performs a forward pass on the transformer model.
+    ):
+        """Peforms partial forward of the model to get the query embeddings for retreival
 
         Args:
             batch: A PytorchBatch instance containing input data.
-            input_embeds: Precomputed embeddings for the input data. Currently unused.
+            input_embeds: Precomputed embeddings for the input data.
             past: Past hidden states for more efficient decoding.
             seq_attention_mask: Mask for the sequential attention mechanism.
             head_mask: Mask to nullify selected heads of the self-attention module.
             use_cache: Specifies whether caching should be used.
             output_attentions: Specifies whether attention probabilities should be returned in the output.
             output_hidden_states: Specifies whether hidden states should be returned in the output.
-            return_dict: Specifies whether the output should be an object with key names (True) or a tuple.
 
         Returns:
-            A tuple containing hidden states, or a TransformerOutputWithPast object if return_dict is True.
+            ???
         """
-
-        output_attentions = (
-            output_attentions if output_attentions is not None else self.config.output_attentions
-        )
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_attentions = output_attentions or self.config.output_attentions
+        output_hidden_states = output_hidden_states or self.config.output_hidden_states
+        use_cache = use_cache or self.config.use_cache
 
         if past is None:
-            past = tuple([None] * len(self.layers))
+            past = tuple([None] * self.config.num_hidden_layers)
 
         if input_embeds is None:
             assert batch is not None
@@ -839,63 +836,26 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
 
         hidden_states = input_embeds
 
-        presents = () if use_cache else None
+        current_key_values = () if use_cache else None
 
         all_self_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
-        for i, (layer, kv_cache) in enumerate(zip(self.layers, past)):
+        for i, (layer, layer_kv_cache) in enumerate(zip(self.non_retreival_layers, past)):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
-            if self.gradient_checkpointing and self.training:
-                if use_cache:
-                    logger.warning(
-                        "`use_cache=True` is incompatible with gradient checkpointing. "
-                        "Setting `use_cache=False`..."
-                    )
-                    use_cache = False
+            if self.gradient_checkpointing:
+                raise NotImplementedError()
 
-                def create_custom_forward(module):
-                    def custom_forward(*inputs):
-                        return module(*inputs)
-
-                    return custom_forward
-
-                # We do this twice because the checkpointed process can't take keyword args, which is safer
-                # and cleaner, in my opinion.
-                # TODO: static_kv_first is always False here (?)
-                args = (
-                    hidden_states,
-                    seq_attention_mask,
-                    kv_cache,
-                    head_mask[i],
-                    use_cache,
-                    output_attentions,
-                    False, # static_kv_first
-                    batch.retreived_hidden_states,
-                )
-                # hidden_states,
-                # attention_mask=None,
-                # layer_past=None,
-                # head_mask=None,
-                # use_cache=False,
-                # output_attentions=False,
-                # static_kv_first: bool = False,
-                # retreived_hidden_states: torch.Tensor | None = None,
-
-                outputs = torch.utils.checkpoint.checkpoint(create_custom_forward(layer), *args)
-            else:
-                outputs = layer(
-                    hidden_states=hidden_states,
-                    attention_mask=seq_attention_mask,
-                    layer_past=kv_cache,
-                    head_mask=head_mask[i],
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                    retreived_hidden_states=batch.retreived_hidden_states,
-                )
-
-            hidden_states, extra_return_info = outputs
+            hidden_states, extra_return_info = layer(
+                hidden_states=hidden_states,
+                attention_mask=seq_attention_mask,
+                layer_past=layer_kv_cache,
+                head_mask=head_mask[i],
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                retreived_hidden_states=None,  # retreived_hidden_states are not used in the first half of the model
+            )
 
             if batch is not None and batch.event_mask is not None:
                 hidden_states = torch.where(
@@ -905,22 +865,173 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
                 )
 
             if use_cache is True:
-                presents = presents + (extra_return_info["present_key_value"],)
+                current_key_values = current_key_values + (extra_return_info["present_key_value"],)
+
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (extra_return_info["attn_weights"],)
+        # end of for-loop over layers
+
+        return RetreivalTransformerMiddleLayersOutput(
+            last_hidden_state=hidden_states,
+            past_key_values=current_key_values,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attentions,
+            all_hidden_states=all_hidden_states,
+            all_self_attentions=all_self_attentions,
+        )
+
+    def second_half_forward(
+        self,
+        batch: PytorchBatch | None = None,
+        hidden_states: torch.Tensor | None = None,
+        retreived_hidden_states: torch.Tensor | None = None,
+        past: tuple[torch.FloatTensor] | None = None,
+        seq_attention_mask: torch.Tensor | None = None,
+        head_mask: torch.Tensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        # below are the parameters that need to be piped from
+        # the first half of the model
+        first_half_output: RetreivalTransformerMiddleLayersOutput | None = None,
+        all_hidden_states: tuple[torch.FloatTensor] | None = None,
+        all_self_attentions: tuple[torch.FloatTensor] | None = None,
+        current_key_values: tuple[torch.FloatTensor] | None = None,
+    ) -> TransformerOutputWithPast:
+        """Takes hidden_states and retreival_hidden_states as input and forwards the rest of the model.
+
+        You can provide either hidden_states, all_hidden_states and all_attentions or first_half_output as input.
+        Additionally takes `all_hidden_states` and `all_attentions` as input, which are the outputs of the first
+        (non-retreival) layers of the model. These are only needed if `output_hidden_states` or `output_attentions`
+        """
+        retreived_hidden_states = retreived_hidden_states or batch.retreived_hidden_states
+        if retreived_hidden_states is None:
+            raise ValueError("retreived_hidden_states must be provided for the second half of the model layers")
+
+        output_attentions = output_attentions or self.config.output_attentions
+        output_hidden_states = output_hidden_states or self.config.output_hidden_states
+        use_cache = use_cache or self.config.use_cache
+
+        if first_half_output is not None:
+            hidden_states = first_half_output.last_hidden_state
+            all_hidden_states = first_half_output.all_hidden_states
+            all_self_attentions = first_half_output.all_self_attentions
+            current_key_values = first_half_output.past_key_values
+
+        if hidden_states is None:
+            raise ValueError("hidden_states must be provided for the second half of the model layers")
+
+        if past is None:
+            past = tuple([None] * self.config.num_hidden_layers)
+
+        if seq_attention_mask is None and batch is not None and batch.get("event_mask", None) is not None:
+            seq_attention_mask = expand_mask(batch["event_mask"], hidden_states.dtype)
+
+        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+        retreived_hidden_states = self.ln_retreival(retreived_hidden_states)
+
+        for i, (layer, layer_kv_cache) in enumerate(zip(self.retreival_layers, past[len(self.non_retreival_layers):])):
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
+            if self.gradient_checkpointing:
+                raise NotImplementedError()
+
+            hidden_states, extra_return_info = layer(
+                hidden_states=hidden_states,
+                attention_mask=seq_attention_mask,
+                layer_past=layer_kv_cache,
+                head_mask=head_mask[i],
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                retreived_hidden_states=retreived_hidden_states,
+            )
+
+            if batch is not None and batch.event_mask is not None:
+                hidden_states = torch.where(
+                    batch.event_mask.unsqueeze(-1).expand_as(hidden_states),
+                    hidden_states,
+                    torch.zeros_like(hidden_states),
+                )
+
+            if use_cache is True:
+                current_key_values = current_key_values + (extra_return_info["present_key_value"],)
 
             if output_attentions:
                 all_self_attentions = all_self_attentions + (extra_return_info["attn_weights"],)
 
         hidden_states = self.ln_f(hidden_states)
 
-        hidden_states = hidden_states.view(input_embeds.size())
+        # I don't know what this is supposed to do
+        # hidden_states = hidden_states.view(input_embeds.size())
+
         # Add last hidden state
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
-        if not return_dict: raise NotImplementedError("Deprecated")
         return TransformerOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=presents,
+            past_key_values=current_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attentions,
         )
+
+    def forward(
+        self,
+        *,
+        retreived_hidden_states: torch.Tensor,
+        batch: PytorchBatch | None = None,
+        input_embeds: torch.Tensor | None = None,
+        past: tuple[torch.FloatTensor] | None = None,
+        seq_attention_mask: torch.Tensor | None = None,
+        head_mask: torch.Tensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+    ) -> TransformerOutputWithPast:
+        """In this forward we assume that we have retreived hidden states already.
+        If it's not the case, you need to first perform the first_half_forward,
+        retreive the hidden states and then perform the second_half_forward.
+
+        Args:
+            batch: A PytorchBatch instance containing input data.
+            input_embeds: Precomputed embeddings for the input data. Currently unused.
+            past: Past hidden states for more efficient decoding.
+            seq_attention_mask: Mask for the sequential attention mechanism.
+            head_mask: Mask to nullify selected heads of the self-attention module.
+            use_cache: Specifies whether caching should be used.
+            output_attentions: Specifies whether attention probabilities should be returned in the output.
+            output_hidden_states: Specifies whether hidden states should be returned in the output.
+
+        Returns:
+            A tuple containing hidden states, or a TransformerOutputWithPast object if return_dict is True.
+        """
+
+        non_retreival_output = self.first_half_forward(
+            batch=batch,
+            input_embeds=input_embeds,
+            past=past,
+            seq_attention_mask=seq_attention_mask,
+            head_mask=head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+        )
+
+        retreival_output = self.second_half_forward(
+            batch=batch,
+            hidden_states=non_retreival_output.last_hidden_state,
+            retreived_hidden_states=retreived_hidden_states,
+            past=past,
+            seq_attention_mask=seq_attention_mask,
+            head_mask=head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            all_hidden_states=non_retreival_output.hidden_states,
+            all_self_attentions=non_retreival_output.attentions,
+            current_key_values=non_retreival_output.past_key_values,
+        )
+
+        return retreival_output
