@@ -256,6 +256,9 @@ class ChunkedCrossAttention(nn.Module):
         Learn more: https://arxiv.org/abs/2112.04426
         Implementation is based on https://nn.labml.ai/transformers/retro/model.html
         """
+        if chunk_len is None:
+            raise RuntimeError("chunk_len must be provided")
+
         super().__init__()
         self.hidden = hidden
         self.chunk_len = chunk_len
@@ -293,6 +296,15 @@ class ChunkedCrossAttention(nn.Module):
         # That is the retrieved neighbors from the first chunks will have information from the first chunk.
         # So by shifting the sequence to the left by chunk_len - 1 we make sure that information only flows to the right.
         q = q[:, self.chunk_len - 1:]
+
+        if q.shape[1] > n_chunks * self.chunk_len:
+            raise RuntimeError(
+                f"Chunked cross attention expects q.shape[1] <= n_chunks * chunk_len, "
+                f"got q.shape[1]: {q.shape[1]}, n_chunks: {n_chunks}, chunk_len: {self.chunk_len}. "
+                f"It's likely you're not forming retreived_hidden_states correctly"
+                f"They should be of shape (batch_size, n_chunks, n_neighbors, neighbor_len, hidden_size)"
+                f"And the retreival query used to retreive the hiddens should be of shape (batch_size, n_chunks, chunk_len, hidden_size)"
+            )
 
         if q.shape[1] < n_chunks * self.chunk_len:
             # Append empty embeddings to the end to be able to split the input into chunks
@@ -760,6 +772,8 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
 
     def __init__(self, config: StructuredTransformerConfig):
         super().__init__(config)
+        if config.chunked_cross_attention_chunk_len is None:
+            raise ValueError("chunked_cross_attention_chunk_len must be provided for retreival models")
 
         self.config = config
         self.embed_dim = config.hidden_size
@@ -777,15 +791,49 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         )
 
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
-        self.ln_retreival = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+
+        self.ln_retreival_queries = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.ln_retreival_hiddens = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         self.post_init()
 
+    def reshape_to_retreival_queries(
+            self,
+            hidden_states,
+            *,
+            allow_padding,
+            do_pool=False,
+        ):
+            """
+            This function is not a part of the half_forward,
+            because during generation we will mostly have sequences of length%chunk_len != 0 and it's expendive to always pad
+
+            `allow_padding` is **intentionally left without a default value**, provide it explicitly
+            """
+            batch_size, seq_len, hidden = hidden_states.shape
+            chunk_len = self.config.chunked_cross_attention_chunk_len
+            n_chunks = seq_len // chunk_len
+            if n_chunks * chunk_len != seq_len:
+                if not allow_padding: raise RuntimeError(f"Can't reshape to retreival queries without padding, seq_len: {hidden_states.shape=}, chunk_len: {chunk_len}")
+                # Pad the input to be divisible by chunk_len
+                add_len = (n_chunks + 1) * chunk_len - seq_len
+                hidden_states = torch.cat((hidden_states, hidden_states.new_zeros(batch_size, add_len, hidden)), dim=1)
+                n_chunks += 1
+
+            retreival_queries = hidden_states.reshape(
+                batch_size, -1, self.config.chunked_cross_attention_chunk_len, hidden
+            )
+            retreival_queries = self.ln_retreival_queries(retreival_queries)
+            if do_pool:
+                retreival_queries = torch.max(retreival_queries, dim=2).values
+            return retreival_queries
+
     def first_half_forward(
         self,
         batch: PytorchBatch | None = None,
+        *,
         input_embeds: torch.Tensor | None = None,
         past: tuple[torch.FloatTensor] | None = None,
         seq_attention_mask: torch.Tensor | None = None,
@@ -793,7 +841,7 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         use_cache: bool | None = None,
         output_attentions: bool | None = None,
         output_hidden_states: bool | None = None,
-    ):
+    ) -> RetreivalTransformerMiddleLayersOutput:
         """Peforms partial forward of the model to get the query embeddings for retreival
 
         Args:
@@ -807,11 +855,10 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
             output_hidden_states: Specifies whether hidden states should be returned in the output.
 
         Returns:
-            ???
+            RetreivalTransformerMiddleLayersOutput with the last_hidden being the hidden of the last non-retrieval layer
         """
         output_attentions = output_attentions or self.config.output_attentions
         output_hidden_states = output_hidden_states or self.config.output_hidden_states
-        use_cache = use_cache or self.config.use_cache
 
         if past is None:
             past = tuple([None] * self.config.num_hidden_layers)
@@ -864,7 +911,7 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
                     torch.zeros_like(hidden_states),
                 )
 
-            if use_cache is True:
+            if use_cache:
                 current_key_values = current_key_values + (extra_return_info["present_key_value"],)
 
             if output_attentions:
@@ -883,6 +930,7 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
     def second_half_forward(
         self,
         batch: PytorchBatch | None = None,
+        *,
         hidden_states: torch.Tensor | None = None,
         retreived_hidden_states: torch.Tensor | None = None,
         past: tuple[torch.FloatTensor] | None = None,
@@ -904,13 +952,16 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         Additionally takes `all_hidden_states` and `all_attentions` as input, which are the outputs of the first
         (non-retreival) layers of the model. These are only needed if `output_hidden_states` or `output_attentions`
         """
-        retreived_hidden_states = retreived_hidden_states or batch.retreived_hidden_states
+        # ############################################################
+        # Input verification/formation
+        if retreived_hidden_states is None:
+            retreived_hidden_states = batch.retreived_hidden_states
+
         if retreived_hidden_states is None:
             raise ValueError("retreived_hidden_states must be provided for the second half of the model layers")
 
         output_attentions = output_attentions or self.config.output_attentions
         output_hidden_states = output_hidden_states or self.config.output_hidden_states
-        use_cache = use_cache or self.config.use_cache
 
         if first_half_output is not None:
             hidden_states = first_half_output.last_hidden_state
@@ -921,6 +972,9 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         if hidden_states is None:
             raise ValueError("hidden_states must be provided for the second half of the model layers")
 
+        if output_hidden_states and all_hidden_states is None:
+            raise ValueError("all_hidden_states must be provided if output_hidden_states is True")
+
         if past is None:
             past = tuple([None] * self.config.num_hidden_layers)
 
@@ -928,8 +982,10 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
             seq_attention_mask = expand_mask(batch["event_mask"], hidden_states.dtype)
 
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+        # End of input verification/formation
+        # ############################################################
 
-        retreived_hidden_states = self.ln_retreival(retreived_hidden_states)
+        retreived_hidden_states = self.ln_retreival_hiddens(retreived_hidden_states)
 
         for i, (layer, layer_kv_cache) in enumerate(zip(self.retreival_layers, past[len(self.non_retreival_layers):])):
             if output_hidden_states:
@@ -955,7 +1011,7 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
                     torch.zeros_like(hidden_states),
                 )
 
-            if use_cache is True:
+            if use_cache:
                 current_key_values = current_key_values + (extra_return_info["present_key_value"],)
 
             if output_attentions:
@@ -979,9 +1035,9 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
 
     def forward(
         self,
+        batch: PytorchBatch | None = None,
         *,
         retreived_hidden_states: torch.Tensor,
-        batch: PytorchBatch | None = None,
         input_embeds: torch.Tensor | None = None,
         past: tuple[torch.FloatTensor] | None = None,
         seq_attention_mask: torch.Tensor | None = None,

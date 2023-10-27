@@ -243,12 +243,12 @@ class ESTForStreamClassificationLM(L.LightningModule):
         """Configures optimizer and learning rate scheduler.
 
         Currently this module uses the AdamW optimizer, with configurable weight_decay, with a learning rate
-        warming up from 0 on a per-step manner to the configurable `self.optimization_config.init_lr`, then
+        warming up from 0 on a per-step manner to the configurable `self.optimization_config.max_lr`, then
         undergoes polynomial decay as specified via `self.optimization_config`.
         """
         opt = torch.optim.AdamW(
             self.model.parameters(),
-            lr=self.optimization_config.init_lr,
+            lr=self.optimization_config.max_lr,
             weight_decay=self.optimization_config.weight_decay,
         )
         scheduler = get_polynomial_decay_schedule_with_warmup(
@@ -433,14 +433,14 @@ def train(cfg: FinetuneConfig):
     # Setting up torch dataloader
     train_dataloader = torch.utils.data.DataLoader(
         train_pyd,
-        batch_size=optimization_config.batch_size,
+        batch_size=optimization_config.per_device_batch_size,
         num_workers=optimization_config.num_dataloader_workers,
         collate_fn=train_pyd.collate,
         shuffle=True,
     )
     tuning_dataloader = torch.utils.data.DataLoader(
         tuning_pyd,
-        batch_size=optimization_config.validation_batch_size,
+        batch_size=optimization_config.per_device_validation_batch_size,
         num_workers=optimization_config.num_dataloader_workers,
         collate_fn=tuning_pyd.collate,
         shuffle=False,

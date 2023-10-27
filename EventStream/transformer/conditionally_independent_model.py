@@ -200,13 +200,43 @@ class CondIndepModelForGenerativeSequenceModeling(StructuredGenerationMixin, Str
         # Initialize weights and apply final processing
         self.post_init()
 
-    def first_half_forward(self, *args, **kwargs):
+    def first_half_forward(self, batch: PytorchBatch, **kwargs):
+        """This runs the full forward pass of the model.
+
+        Args:
+            batch: The batch of data to be transformed.
+            is_generation: Whether or not the model is being used for generation.
+            **kwargs: Additional keyword arguments, which are used for output structuring and are forwarded to
+                the encoder. The model specifically looks for use_cache, output_attentions, and
+                output_hidden_states keyword arguments, which control whether additional properties should be
+                added to the output.
+
+        Returns:
+            The output of the model, which is a `GenerativeSequenceModelOutput` object.
+        """
+        encoded = self.encoder.first_half_forward(batch, **kwargs)
+        return encoded
+
+    def second_half_forward(self, *, batch, is_generation=False, **kwargs):
         # only for the retreival augmented model
-        return self.encoder.first_half_forward(*args, **kwargs)
-    
-    def second_half_forward(self, *args, **kwargs):
+        encoded = self.encoder.second_half_forward(batch=batch, **kwargs)
+
+        output = self.output_layer(batch, encoded.last_hidden_state, is_generation=is_generation)
+
+        if kwargs.get("use_cache", False):
+            output["past_key_values"] = encoded.past_key_values
+
+        if kwargs.get("output_attentions", False):
+            output["attentions"] = encoded.attentions
+
+        if kwargs.get("output_hidden_states", False):
+            output["hidden_states"] = encoded.hidden_states
+
+        return output
+
+    def reshape_to_retreival_queries(self, *args, **kwargs):
         # only for the retreival augmented model
-        return self.encoder.second_half_forward(*args, **kwargs)
+        return self.encoder.reshape_to_retreival_queries(*args, **kwargs)
 
     def prepare_inputs_for_generation(
         self, batch: PytorchBatch, past: tuple | None = None, **kwargs

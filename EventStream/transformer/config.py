@@ -202,7 +202,7 @@ class OptimizationConfig(JSONableMixin):
     """Configuration for optimization variables for training a model.
 
     Args:
-        init_lr: The initial learning rate used by the optimizer. Given warmup is used, this will be the peak
+        max_lr: The initial learning rate used by the optimizer. Given warmup is used, this will be the peak
             learning rate after the warmup period.
         end_lr: The final learning rate at the end of all learning rate decay.
         max_epochs: The maximum number of training epochs.
@@ -222,48 +222,51 @@ class OptimizationConfig(JSONableMixin):
         lr_decay_power: The decay power in the learning rate polynomial decay with warmup. 1.0 corresponds to
             linear decay.
         weight_decay: The L2 weight regularization penalty that is applied during training.
-        patience: The number of epochs to wait before early stopping if the validation loss does not improve.
-            If None, early stopping is not used.
         gradient_accumulation: The number of gradient accumulation steps to use. If None, gradient
             accumulation is not used.
 
     Raises:
-        ValueError: If `end_lr`, `init_lr`, and `end_lr_frac_of_init_lr` are not consistent, or if `end_lr`
-            and `end_lr_frac_of_init_lr` are both unset.
+        ValueError: If `end_lr`, `max_lr`, and `end_lr_frac_of_max_lr` are not consistent, or if `end_lr`
+            and `end_lr_frac_of_max_lr` are both unset.
     """
 
-    init_lr: float = 1e-2
+    max_epochs: int = 1
+    max_lr: float = 1e-3
     end_lr: float | None = None
-    end_lr_frac_of_init_lr: float | None = 1e-3
-    max_epochs: int = 100
-    batch_size: int = 32
-    validation_batch_size: int = 32
+    end_lr_frac_of_max_lr: float | None = 1e-3
+    total_batch_size: int = 32
+    per_device_train_batch_size: int = 32
+    per_device_eval_batch_size: int = 32
     lr_frac_warmup_steps: float | None = 0.01
     lr_num_warmup_steps: int | None = None
     max_training_steps: int | None = None
     lr_decay_power: float = 1.0
     weight_decay: float = 0.01
-    patience: int | None = None
     gradient_accumulation: int | None = None
+    clip_grad_norm: float = 1.0
+    eval_every: int = 1000
+    save_every: int | None = 1000  # None for no saving
+    keep_last_n_checkpoints: int | None = None  # keep all by default
+    patience: int | None = None
 
     num_dataloader_workers: int = 0
 
     def __post_init__(self):
-        if self.end_lr_frac_of_init_lr is not None:
-            if self.end_lr_frac_of_init_lr <= 0.0 or self.end_lr_frac_of_init_lr >= 1.0:
-                raise ValueError("`end_lr_frac_of_init_lr` must be between 0.0 and 1.0!")
+        if self.end_lr_frac_of_max_lr is not None:
+            if self.end_lr_frac_of_max_lr <= 0.0 or self.end_lr_frac_of_max_lr >= 1.0:
+                raise ValueError("`end_lr_frac_of_max_lr` must be between 0.0 and 1.0!")
             if self.end_lr is not None:
-                prod = self.end_lr_frac_of_init_lr * self.init_lr
+                prod = self.end_lr_frac_of_max_lr * self.max_lr
                 if not math.isclose(self.end_lr, prod):
                     raise ValueError(
-                        "If both set, `end_lr` must be equal to `end_lr_frac_of_init_lr * init_lr`! Got "
-                        f"end_lr={self.end_lr}, end_lr_frac_of_init_lr * init_lr = {prod}!"
+                        "If both set, `end_lr` must be equal to `end_lr_frac_of_max_lr * max_lr`! Got "
+                        f"end_lr={self.end_lr}, end_lr_frac_of_max_lr * max_lr = {prod}!"
                     )
-            self.end_lr = self.end_lr_frac_of_init_lr * self.init_lr
+            self.end_lr = self.end_lr_frac_of_max_lr * self.max_lr
         else:
             if self.end_lr is None:
-                raise ValueError("Must set either end_lr or end_lr_frac_of_init_lr!")
-            self.end_lr_frac_of_init_lr = self.end_lr / self.init_lr
+                raise ValueError("Must set either end_lr or end_lr_frac_of_max_lr!")
+            self.end_lr_frac_of_max_lr = self.end_lr / self.max_lr
 
     def set_to_dataset(self, dataset: PytorchDataset):
         """Sets parameters in the config to appropriate values given dataset.
@@ -279,7 +282,7 @@ class OptimizationConfig(JSONableMixin):
             ValueError: If the setting process does not yield consistent results.
         """
 
-        steps_per_epoch = int(math.ceil(len(dataset) / self.batch_size))
+        steps_per_epoch = int(math.ceil(len(dataset) / self.total_batch_size))
 
         if self.max_training_steps is None:
             self.max_training_steps = steps_per_epoch * self.max_epochs

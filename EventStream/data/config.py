@@ -735,6 +735,7 @@ class PytorchDatasetConfig(JSONableMixin):
     max_seq_len: int = 256
     min_seq_len: int = 2
     seq_padding_side: SeqPaddingSide = SeqPaddingSide.RIGHT
+    pad_to_mutiple_of: int = 1
     subsequence_sampling_strategy: SubsequenceSamplingStrategy = SubsequenceSamplingStrategy.RANDOM
 
     train_subset_size: int | str = "FULL"

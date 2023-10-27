@@ -25,6 +25,7 @@ setup(
         "humanize",
         "plotly",
         "connectorx",
+        "loguru",
     ],
     packages=find_packages(),
     # use this to customize global commands available in the terminal after installing the package

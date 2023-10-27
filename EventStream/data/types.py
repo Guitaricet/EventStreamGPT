@@ -214,6 +214,34 @@ class PytorchBatch:
         """A dictionary like get method for this batch, by attribute name."""
         return getattr(self, item) if item in self.keys() else default
 
+    def to(self, device: torch.device, dtype: torch.dtype = None):
+        self.time_delta = self.time_delta.to(device)
+        self.dynamic_indices = self.dynamic_indices.to(device)
+        self.dynamic_measurement_indices = self.dynamic_measurement_indices.to(device)
+        self.dynamic_values = self.dynamic_values.to(device=device, dtype=dtype)
+        self.event_mask = self.event_mask.to(device)
+        self.dynamic_values_mask = self.dynamic_values_mask.to(device)
+
+        if self.static_indices is not None:
+            self.static_indices = self.static_indices.to(device)
+            self.static_measurement_indices = self.static_measurement_indices.to(device) 
+
+        if self.start_time is not None:
+            self.start_time = self.start_time.to(device)
+
+        if self.start_idx is not None:
+            self.start_idx = self.start_idx.to(device)
+            self.end_idx = self.end_idx.to(device)
+
+        if self.subject_id is not None:
+            self.subject_id = self.subject_id.to(device)
+
+        if self.stream_labels is not None:
+            for k, v in self.stream_labels.items():
+                self.stream_labels[k] = v.to(device)
+
+        return self
+
     def _slice(self, index: tuple[int | slice] | int | slice) -> "PytorchBatch":
         if not isinstance(index, tuple):
             index = (index,)

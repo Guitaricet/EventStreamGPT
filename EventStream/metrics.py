@@ -1,10 +1,9 @@
+# Ex lightning module functions
 import dataclasses
-import json
-import os
-from pathlib import Path
 from typing import Any
 
-import omegaconf
+import torch
+
 import torch
 import torch.multiprocessing
 import torch.utils.data
@@ -19,12 +18,10 @@ from torchmetrics.classification import (
 )
 from transformers import get_polynomial_decay_schedule_with_warmup
 
-from ...data.config import PytorchDatasetConfig
-from ...data.pytorch_dataset import PytorchDataset
-from ...data.types import DataModality, PytorchBatch
-from ...utils import hydra_dataclass, task_wrapper
-from ..conditionally_independent_model import CondIndepModelForGenerativeSequenceModeling
-from ..config import (
+import wandb
+
+from EventStream.data.types import DataModality
+from EventStream.transformer.config import (
     Averaging,
     MetricCategories,
     Metrics,
@@ -34,14 +31,11 @@ from ..config import (
     StructuredEventProcessingMode,
     StructuredTransformerConfig,
 )
-from ..model_output import GenerativeSequenceModelOutput
-from ..nested_attention_model import NestedAttnModelForGenerativeSequenceModeling
-from ..utils import expand_indexed_regression, str_summary
+from EventStream.transformer.model_output import GenerativeSequenceModelOutput
+from EventStream.transformer.utils import expand_indexed_regression, str_summary
 
 
-class ESTForGenerativeSequenceModelingLM:
-    """A PyTorch Lightning Module for a `ESTForGenerativeSequenceModeling`."""
-
+class MetricsLogger:
     TRAIN_SKIP_METRICS = ("AUROC", "AUPRC", "per_class")
     CLASSIFICATION = {
         DataModality.SINGLE_LABEL_CLASSIFICATION,
@@ -51,22 +45,12 @@ class ESTForGenerativeSequenceModelingLM:
     def __init__(
         self,
         config: StructuredTransformerConfig | dict[str, Any],
-        optimization_config: OptimizationConfig | dict[str, Any],
         metrics_config: MetricsConfig | dict[str, Any],
-        pretrained_weights_fp: Path | None = None,
     ):
-        """Initializes the Lightning Module.
+        """A class to handle metrics logging.
 
-        Args:
-            config (`Union[StructuredEventstreamTransformerConfig, Dict[str, Any]]`):
-                The configuration for the underlying
-                `ESTForGenerativeSequenceModeling` model. Should be
-                in the dedicated `StructuredTransformerConfig` class or be a dictionary
-                parseable as such.
-            optimization_config (`Union[OptimizationConfig, Dict[str, Any]]`):
-                The configuration for the optimization process handled by the Lightning module. Should
-                be in the dedicated `OptimizationConfig` class or be a dictionary parseable
-                as such.
+        Statefullness is mainly needed to store the metrics configuration.
+        Distributed metric computation is not yet supported.
         """
         super().__init__()
 
@@ -75,41 +59,13 @@ class ESTForGenerativeSequenceModelingLM:
         # this functionality.
         if type(config) is dict:
             config = StructuredTransformerConfig(**config)
-        if type(optimization_config) is dict:
-            optimization_config = OptimizationConfig(**optimization_config)
         if type(metrics_config) is dict:
             metrics_config = MetricsConfig(**metrics_config)
 
         self.config = config
-        self.optimization_config = optimization_config
         self.metrics_config = metrics_config
 
-        self.save_hyperparameters(
-            {
-                "config": config.to_dict(),
-                "optimization_config": dataclasses.asdict(optimization_config),
-            }
-        )
         self.build_metrics()
-
-        match config.structured_event_processing_mode:
-            case StructuredEventProcessingMode.NESTED_ATTENTION:
-                model_cls = NestedAttnModelForGenerativeSequenceModeling
-            case StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT:
-                model_cls = CondIndepModelForGenerativeSequenceModeling
-            case _:
-                raise ValueError(
-                    f"Unsupported structured event processing mode: {config.structured_event_processing_mode}"
-                )
-
-        if pretrained_weights_fp is None:
-            self.model = model_cls(config)
-        else:
-            self.model = model_cls.from_pretrained(pretrained_weights_fp, config=config)
-
-    def save_pretrained(self, model_dir: Path):
-        fp = model_dir / "pretrained_weights"
-        self.model.save_pretrained(fp)
 
     def build_metrics(self):
         """Build the various torchmetrics we'll use to track performance."""
@@ -264,7 +220,6 @@ class ESTForGenerativeSequenceModelingLM:
                 self.log(
                     f"{split}/{measurement}_{metric_name}",
                     metric,
-                    batch_size=self.optimization_config.batch_size,
                     sync_dist=True,
                 )
             except (ValueError, IndexError) as e:
@@ -301,7 +256,7 @@ class ESTForGenerativeSequenceModelingLM:
             cat=MetricCategories.TTE,
         )
 
-    def log_metrics(self, results: GenerativeSequenceModelOutput, split: Split):
+    def log_metrics(self, results: GenerativeSequenceModelOutput, step: int, split: Split):
         """Logs metric results for a given output result.
 
         Args:
@@ -311,7 +266,6 @@ class ESTForGenerativeSequenceModelingLM:
         """
 
         # We always want to log the raw loss.
-        log_kwargs = {"batch_size": self.optimization_config.batch_size, "sync_dist": True}
         self.log(f"{split}/loss", results["loss"], **log_kwargs)
 
         if self.metrics_config.do_log_only_loss(split):
@@ -320,11 +274,11 @@ class ESTForGenerativeSequenceModelingLM:
         # We start by logging the losses.
         self.log_dict(
             {f"{split}/{k}_cls_NLL": v for k, v in results["losses"]["classification"].items()},
-            **log_kwargs,
+            step=step,
         )
         self.log_dict(
             {f"{split}/{k}_reg_NLL": v for k, v in results["losses"]["regression"].items()},
-            **log_kwargs,
+            step=step,
         )
         self.log(f"{split}/TTE_reg_NLL", results["losses"]["time_to_event"], **log_kwargs)
 
@@ -426,77 +380,3 @@ class ESTForGenerativeSequenceModelingLM:
                         split=split,
                         cat=MetricCategories.REGRESSION,
                     )
-
-    def training_step(self, batch: PytorchBatch, batch_idx: int) -> torch.Tensor:
-        raise RuntimeError("This function should not be used anymore")
-
-    def validation_step(self, batch: PytorchBatch, batch_idx: int):
-        raise RuntimeError("This function should not be used anymore")
-
-    def test_step(self, batch: PytorchBatch, batch_idx: int):
-        raise RuntimeError("This function should not be used anymore")
-
-    def configure_optimizers(self):
-        raise RuntimeError("This function should not be used anymore")
-
-
-SKIP_CFG_PARAMS = {"seq_attention_layers", "dep_graph_attention_layers"}
-
-
-@hydra_dataclass
-class PretrainConfig:
-    do_overwrite: bool = False
-    seed: int = 1
-
-    model_config: dict[str, Any] = dataclasses.field(
-        default_factory=lambda: {
-            "_target_": "EventStream.transformer.config.StructuredTransformerConfig",
-            **{
-                k: v
-                for k, v in StructuredTransformerConfig(measurements_per_dep_graph_level=[]).to_dict().items()
-                if k not in SKIP_CFG_PARAMS
-            },
-        }
-    )
-    optimization_config: OptimizationConfig = OptimizationConfig()
-    data_config: PytorchDatasetConfig = PytorchDatasetConfig()
-    pretraining_metrics_config: MetricsConfig = MetricsConfig(do_skip_all_metrics=True)
-    final_validation_metrics_config: MetricsConfig = MetricsConfig(do_skip_all_metrics=False)
-
-    trainer_config: dict[str, Any] = dataclasses.field(
-        default_factory=lambda: {
-            "accelerator": "auto",
-            "devices": "auto",
-            "detect_anomaly": False,
-            "default_root_dir": "${save_dir}/model_checkpoints",
-            "log_every_n_steps": 10,
-        }
-    )
-
-    experiment_dir: str = omegaconf.MISSING
-    save_dir: str = "${experiment_dir}/pretrain/${now:%Y-%m-%d_%H-%M-%S}"
-
-    wandb_logger_kwargs: dict[str, Any] = dataclasses.field(
-        default_factory=lambda: {
-            "project": "EventStream",
-        }
-    )
-
-    num_dataloader_workers: int = 1
-
-    do_final_validation_on_metrics: bool = True
-
-    # compile: bool = True
-
-    def __post_init__(self):
-        if type(self.save_dir) is str and self.save_dir != omegaconf.MISSING:
-            self.save_dir = Path(self.save_dir)
-        if "max_epochs" in self.trainer_config:
-            raise ValueError("Max epochs is set in the optimization_config, not the trainer config!")
-        if "callbacks" in self.trainer_config:
-            raise ValueError("Callbacks are built internally, not set via trainer_config!")
-
-
-@task_wrapper
-def train(cfg: PretrainConfig):
-    raise RuntimeError("This function should not be used anymore")

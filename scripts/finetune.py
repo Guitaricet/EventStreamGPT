@@ -30,7 +30,7 @@ def main(cfg: FinetuneConfig):
         cfg_fp.parent.mkdir(exist_ok=True, parents=True)
 
         cfg_dict = copy.deepcopy(cfg)
-        cfg_dict.config = cfg_dict.config.to_dict()
+        cfg_dict.model_config = cfg_dict.model_config.to_dict()
         OmegaConf.save(cfg_dict, cfg_fp)
 
     return train(cfg)

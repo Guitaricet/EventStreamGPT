@@ -82,9 +82,7 @@ The script endpoint to launch a pre-training run, with the built in transformer 
 To run this script, simply call it and override its parameters via hydra:
 
 ```bash
-PYTHONPATH="$EVENT_STREAM_PATH:$PYTHONPATH" python $EVENT_STREAM_PATH/scripts/pretrain.py \
-	--config-path='/path/to/local/configs' \
-	--config-name='local_config_name' \
+python scripts/pretrain.py --config-path="../configs" --config-name="retro_test.yaml" \
 	optimization_config.batch_size=24 optimization_config.num_dataloader_workers=64 # hydra overrides...
 ```
 
@@ -164,7 +162,6 @@ PYTHONPATH="$EVENT_STREAM_PATH:$PYTHONPATH" python $EVENT_STREAM_PATH/scripts/la
 	--config-name=local_config_name \
 	hydra.searchpath=[$EVENT_STREAM_PATH/configs] # This line ensures hydra can find the pre-defined default
 ```
-
 An example of the overriding local config is:
 
 ```yaml
@@ -297,7 +294,7 @@ look like:
 PYTHONPATH="$EVENT_STREAM_PATH:$PYTHONPATH" python $EVENT_STREAM_PATH/scripts/finetune.py \
 	load_from_model_dir=/pretrained/model/dir \
 	optimization_config.batch_size=64 \
-	optimization_config.init_lr=1e-4 \
+	optimization_config.max_lr=1e-4 \
 	optimization_config.end_lr=null \
 	optimization_config.max_epochs=25 \
 	task_df_name=lv_ef/60d

@@ -237,6 +237,7 @@ class PytorchDataset(SaveableMixin, SeedableMixin, TimeableMixin, torch.utils.da
 
         self.do_produce_static_data = "static_indices" in self.cached_data.columns
         self.seq_padding_side = config.seq_padding_side
+        self.pad_to_multiple_of = config.pad_to_mutiple_of
         self.max_seq_len = config.max_seq_len
 
         length_constraint = pl.col("dynamic_indices").list.lengths() >= config.min_seq_len
