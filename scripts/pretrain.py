@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 """Pre-trains a model from scartch."""
-
-try:
-    # This color-codes and prettifies error messages if the script fails.
-    import stacklogger.infoer
-
-    stacklogger.infoer.set_excepthook(style="darkbg2")
-except ImportError:
-    pass  # no need to fail because of missing dev dependency
-
 import copy
 import dataclasses
 import json
@@ -34,9 +25,13 @@ from tqdm import tqdm
 from loguru import logger
 
 import EventStream
-from EventStream.data.pytorch_dataset import PytorchDataset
-from EventStream.transformer.config import Split, StructuredEventProcessingMode
-from EventStream.transformer.lightning_modules.generative_modeling import PretrainConfig
+from EventStream.config import OptimizationConfig, RetreiverConfig, Split
+from EventStream.transformer.config import StructuredTransformerConfig
+from EventStream.data.pytorch_dataset import PytorchDataset, PytorchDatasetConfig
+from EventStream.transformer.config import (
+    StructuredEventProcessingMode,
+)
+from EventStream.config import PretrainConfig
 from EventStream.transformer.modeling_retro import ConditionallyIndependentRetreivalAugTransformer
 from EventStream.transformer.conditionally_independent_model import CondIndepModelForGenerativeSequenceModeling
 
@@ -97,7 +92,7 @@ def evaluate_model(model, *, dataloader, metrics_logger, dtype, device, step):
     model.train()
 
 
-def train(cfg):
+def train(cfg: PretrainConfig):
     logger.info("Starting training")
     seed_everything(cfg.seed)
 
@@ -108,9 +103,10 @@ def train(cfg):
     global_rank = 0  # assume no distributed for now
     torch.multiprocessing.set_sharing_strategy("file_system")
 
-    model_config = cfg.model_config
-    optimization_config = cfg.optimization_config
-    data_config = cfg.data_config
+    model_config: StructuredTransformerConfig = cfg.model_config
+    optimization_config: OptimizationConfig = cfg.optimization_config
+    data_config: PytorchDatasetConfig = cfg.data_config
+    retreiver_config: RetreiverConfig = cfg.retreiver_config
 
     # Data
     logger.info("Building train dataset")
@@ -144,6 +140,7 @@ def train(cfg):
     # Model
     model: ConditionallyIndependentRetreivalAugTransformer = get_model(model_config)
     model = model.to(dtype=dtype, device=device)
+    retreiver: EventStream.Retreiver = EventStream.Retreiver.from_config(retreiver_config, dtype=dtype)
     logger.info(f"Model: \n{model}")
 
     gradient_accumulation = optimization_config.total_batch_size // (optimization_config.per_device_train_batch_size * world_size)
@@ -187,6 +184,7 @@ def train(cfg):
                 "model_config": model_config.to_dict(),
                 "optimization_config": optimization_config.to_dict(),
                 "data_config": data_config.to_dict(),
+                "retreiver_config": retreiver_config.to_dict(),
             },
         )
 
@@ -194,6 +192,11 @@ def train(cfg):
         config=model_config,
         metrics_config=cfg.pretraining_metrics_config,
     )
+
+    # these are useful to write more consise code in the training loop
+    batch_size = optimization_config.per_device_train_batch_size
+    n_neighbours = retreiver_config.n_neighbours
+    chunk_len = model_config.chunked_cross_attention_chunk_len
 
     # Fitting model
     global_step = 0
@@ -212,22 +215,29 @@ def train(cfg):
             global_step += 1
 
             batch = batch.to(dtype=dtype, device=device)
-            non_retreival_output = model.first_half_forward(batch)
-            # non_retreival_output.last_hidden_state: [batch_size, seq_len, hidden]
-            # retreival queries: [batch_size, n_chunks, chunk_len, hidden]  # parametrized through the chunk length
+            retreiver_query = model.first_half_forward(batch).last_hidden_state
+            n_chunks = retreiver_query.shape[1] // chunk_len
 
-            # TODO: implement pad_to_multiple_of for the model input, so that we don't need to do it here
-            # shape: [batch_size, n_chunks, chunk_len, hidden] (not pooled over chunk len)
-            retreival_queries = model.reshape_to_retreival_queries(non_retreival_output.last_hidden_state, allow_padding=True, do_pool=False)
+            # TODO: implement pad_to_multiple_of for the model input, so that we don't need to do pooling here
+            # shape: [batch_size * n_chunks, hidden] (pooled over chunk len)
+            retreival_queries = model.reshape_to_retreival_queries(retreiver_query, allow_padding=True)
 
-            # shape: [batch_size, n_chunks, n_neighbors, neighbor_len, hidden]
-            # TODO: actually retreive the neighbors
-            retreived_hidden_states = torch.zeros_like(retreival_queries).unsqueeze(2)
+            assert retreival_queries.shape == (batch_size * n_chunks, model_config.hidden_size), f"Expected shape {(batch_size * chunk_len, model_config.hidden_size)}, got {retreival_queries.shape}"
+            # shape: [batch_size * n_chunks, n_neighbors, neighbor_len, retreived_states_hidden_size]
+            _, hidden = retreiver.get_documents_and_embed(
+                retreival_queries,
+                n_neighbours=n_neighbours,
+            )
+            # batch_size, n_chunks, n_neighbors, neighbor_len, hidden
+            # hidden = hidden.reshape(batch_size, n_chunks, n_neighbours, -1, hidden.shape[-1])
+
+            hidden = torch.zeros(batch_size, n_chunks, n_neighbours, chunk_len, 1024, dtype=dtype, device=device)
+            hidden = hidden.to(dtype=dtype, device=device)
 
             retreival_output = model.second_half_forward(
                 batch=batch,
-                hidden_states=non_retreival_output.last_hidden_state,
-                retreived_hidden_states=retreived_hidden_states,
+                hidden_states=retreiver_query,
+                retreived_hidden_states=hidden,
             )
 
             loss = retreival_output.loss

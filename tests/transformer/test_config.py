@@ -1,5 +1,7 @@
 import sys
 
+from EventStream.config import MetricCategories, Metrics, MetricsConfig, OptimizationConfig, Split
+
 sys.path.append("../..")
 
 import unittest
@@ -10,11 +12,6 @@ from unittest.mock import MagicMock
 from EventStream.data.types import DataModality
 from EventStream.transformer.config import (
     Averaging,
-    MetricCategories,
-    Metrics,
-    MetricsConfig,
-    OptimizationConfig,
-    Split,
     StructuredEventProcessingMode,
     StructuredTransformerConfig,
     TimeToEventGenerationHeadType,

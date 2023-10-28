@@ -11,6 +11,8 @@ import polars as pl
 import torch
 import torch.multiprocessing
 
+from ..config import OptimizationConfig
+
 from ..data.config import PytorchDatasetConfig, SeqPaddingSide
 from ..data.pytorch_dataset import PytorchDataset
 from ..data.types import PytorchBatch
@@ -18,7 +20,6 @@ from ..transformer.conditionally_independent_model import (
     CondIndepModelForGenerativeSequenceModeling,
 )
 from ..transformer.config import (
-    OptimizationConfig,
     StructuredEventProcessingMode,
     StructuredTransformerConfig,
 )

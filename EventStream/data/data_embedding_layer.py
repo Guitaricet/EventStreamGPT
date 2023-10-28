@@ -378,7 +378,7 @@ class DataEmbeddingLayer(torch.nn.Module):
             that each unique measurement in the batch contributes equally to the output.
         """
         if values is None:
-            values = torch.ones_like(indices, dtype=torch.float32)
+            values = torch.ones_like(indices, dtype=self.embed_layer.weight.dtype)
         else:
             values = torch.where(values_mask, values, 1)
 

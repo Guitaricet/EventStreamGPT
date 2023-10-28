@@ -54,7 +54,6 @@ from EventStream.transformer.config import (
 from EventStream.transformer.model_output import GenerativeSequenceModelOutput
 from EventStream.transformer.nested_attention_model import NestedAttnModelForGenerativeSequenceModeling
 from EventStream.transformer.utils import expand_indexed_regression, str_summary
-from EventStream.transformer.lightning_modules.generative_modeling import PretrainConfig
 
 
 def build_metrics(config, metrics_config):

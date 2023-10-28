@@ -72,7 +72,6 @@ config:
   output_attentions: false
   torchscript: false
   torch_dtype: null
-  use_bfloat16: false
   tf_legacy_loss: false
   pruned_heads: {}
   tie_word_embeddings: true
@@ -128,9 +127,9 @@ config:
   transformers_version: 4.30.2
   model_type: ''
 optimization_config:
-  init_lr: 0.001
+  max_lr: 0.001
   end_lr: null
-  end_lr_frac_of_init_lr: 0.01
+  end_lr_frac_of_max_lr: 0.01
   max_epochs: 100
   batch_size: 8
   validation_batch_size: 8

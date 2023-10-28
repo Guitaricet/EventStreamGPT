@@ -4,7 +4,15 @@ defaults:
 
 do_overwrite: false
 seed: 1
-config:
+retreiver_config:
+  faiss_index_path: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/faiss/faiss_index_14-32-52/faiss_index_14-32-52.idx
+  documents_dir: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/faiss/faiss_index_14-32-52
+  embedder_name_or_path: roberta-large
+  embedder_device: cuda:1
+model_config:
+  retreival_augmented: true
+  chunked_cross_attention_chunk_len: 32
+  retreived_states_hidden_size: 1024  # for roberta-large
   do_use_learnable_sinusoidal_ATE: false
   do_split_embeddings: false
   categorical_embedding_dim: null
@@ -29,22 +37,26 @@ config:
   resid_dropout: 0.0
   intermediate_size: 3072
 optimization_config:
+  max_epochs: 100
+  total_batch_size: 64
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
   max_lr: 1e-3
   end_lr_frac_of_max_lr: 0.1
   end_lr: null
-  max_epochs: 100
-  batch_size: 64
-  validation_batch_size: 64
   lr_frac_warmup_steps: 0.05
   lr_decay_power: 1.0
   weight_decay: 0.1
   patience: 5
-  gradient_accumulation: null
   num_dataloader_workers: 8
+  eval_every: 10
+  save_every: 10
+  keep_last_n_checkpoints: 1
 data_config:
   save_dir: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1
-  max_seq_len: 190
-  min_seq_len: 4
+  max_seq_len: 192
+  min_seq_len: 32
+  pad_to_mutiple_of: 32  # should be a multiple of chunk length
   train_subset_size: FULL
   train_subset_seed: null
   task_df_name: null
@@ -85,13 +97,7 @@ final_validation_metrics_config:
         ACCURACY: true
       REGRESSION:
         MSE: true
-trainer_config:
-  accelerator: auto
-  devices: auto
-  detect_anomaly: false
-  log_every_n_steps: 1
 experiment_dir: models/${now:%Y-%m-%d_%H-%M-%S}
 wandb_logger_kwargs:
   project: MIMIC_FMs_public
-  name: null
 do_final_validation_on_metrics: true

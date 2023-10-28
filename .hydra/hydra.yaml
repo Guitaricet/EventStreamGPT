@@ -154,8 +154,8 @@ hydra:
     - optimization_config.validation_batch_size=8
     - optimization_config.gradient_accumulation=4
     - optimization_config.end_lr=null
-    - optimization_config.end_lr_frac_of_init_lr=0.01
-    - optimization_config.init_lr=1e-3
+    - optimization_config.end_lr_frac_of_max_lr=0.01
+    - optimization_config.max_lr=1e-3
     - optimization_config.lr_decay_power=1.357682301746075
     - optimization_config.lr_frac_warmup_steps=0.01
     - optimization_config.max_epochs=100
@@ -176,7 +176,7 @@ hydra:
       \ 'race', 'language', 'marital_status', 'insurance', \t'careunit', ['lab_itemid',\
       \ 'categorical_only'], ['infusion_itemid', 'categorical_only']], \t[['lab_itemid',\
       \ 'numerical_only'], ['infusion_itemid', 'numerical_only']], ['procedure_itemid',\
-      \ \t'medication', 'icd_code', 'discharge_location']],config.num_attention_heads=8,config.num_hidden_layers=12,config.numerical_embedding_dim=128,config.resid_dropout=0.0,config.seq_attention_types=['global'],config.seq_window_size=30,config.static_embedding_mode=sum_all,config.static_embedding_weight=0.2340548896783647,config.structured_event_processing_mode=nested_attention,data_config.max_seq_len=1024,data_config.min_seq_len=10,data_config.save_dir=/mnt/shared_home/vlialin/documents/EventStreamGPT/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1,do_final_validation_on_metrics=True,do_overwrite=False,experiment_dir=/mnt/shared_home/vlialin/documents/EventStreamGPT/models/manual_run_jul5_7pm,final_validation_metrics_config.do_skip_all_metrics=False,final_validation_metrics_config.n_auc_thresholds=25,num_dataloader_workers=8,optimization_config.batch_size=8,optimization_config.end_lr=null,optimization_config.end_lr_frac_of_init_lr=0.01,optimization_config.gradient_accumulation=4,optimization_config.init_lr=1e-3,optimization_config.lr_decay_power=1.357682301746075,optimization_config.lr_frac_warmup_steps=0.01,optimization_config.max_epochs=100,optimization_config.patience=5,optimization_config.validation_batch_size=8,optimization_config.weight_decay=0.01,pretraining_metrics_config.do_skip_all_metrics=True,trainer_config.detect_anomaly=False,trainer_config.log_every_n_steps=1,wandb_logger_kwargs.do_log_graph=False,wandb_logger_kwargs.log_model=False,wandb_logger_kwargs.name=null,wandb_logger_kwargs.project=MIMIC_FMs_public"
+      \ \t'medication', 'icd_code', 'discharge_location']],config.num_attention_heads=8,config.num_hidden_layers=12,config.numerical_embedding_dim=128,config.resid_dropout=0.0,config.seq_attention_types=['global'],config.seq_window_size=30,config.static_embedding_mode=sum_all,config.static_embedding_weight=0.2340548896783647,config.structured_event_processing_mode=nested_attention,data_config.max_seq_len=1024,data_config.min_seq_len=10,data_config.save_dir=/mnt/shared_home/vlialin/documents/EventStreamGPT/data/MIMIC_IV/ESD_06-13-23_150GB_10cpu-1,do_final_validation_on_metrics=True,do_overwrite=False,experiment_dir=/mnt/shared_home/vlialin/documents/EventStreamGPT/models/manual_run_jul5_7pm,final_validation_metrics_config.do_skip_all_metrics=False,final_validation_metrics_config.n_auc_thresholds=25,num_dataloader_workers=8,optimization_config.batch_size=8,optimization_config.end_lr=null,optimization_config.end_lr_frac_of_max_lr=0.01,optimization_config.gradient_accumulation=4,optimization_config.max_lr=1e-3,optimization_config.lr_decay_power=1.357682301746075,optimization_config.lr_frac_warmup_steps=0.01,optimization_config.max_epochs=100,optimization_config.patience=5,optimization_config.validation_batch_size=8,optimization_config.weight_decay=0.01,pretraining_metrics_config.do_skip_all_metrics=True,trainer_config.detect_anomaly=False,trainer_config.log_every_n_steps=1,wandb_logger_kwargs.do_log_graph=False,wandb_logger_kwargs.log_model=False,wandb_logger_kwargs.name=null,wandb_logger_kwargs.project=MIMIC_FMs_public"
     id: ???
     num: ???
     config_name: pretrain_config

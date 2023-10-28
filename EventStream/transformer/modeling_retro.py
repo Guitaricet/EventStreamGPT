@@ -273,20 +273,20 @@ class ChunkedCrossAttention(nn.Module):
         self.q_proj = nn.Linear(self.hidden, self.hidden)
         self.out_proj = nn.Linear(self.hidden, self.hidden)
 
-    def forward(self, q, kv):
+    def forward(self, query, kv):
         """
         Args:
             q: torch.FloatTensor[batch_size, seq_len, hidden]
             kv: torch.FloatTensor[batch_size, n_chunks, neighbors, neighbor_len, kv_dim]
         """
         batch_size, n_chunks, n_neighbors, neighbor_len, _ = kv.shape
-        q_batch_size, seq_len, q_hidden = q.shape
+        q_batch_size, seq_len, q_hidden = query.shape
         assert q_batch_size == batch_size, f"q_batch_size: {q_batch_size}, batch_size: {batch_size}"
         assert q_hidden == self.hidden, f"q_hidden: {q_hidden}, hidden: {self.hidden}"
 
         if n_chunks == 0:
             # No attention if there are no chunks (for short inputs when sampling)
-            return q
+            return query
 
         # TODO: add positional information to q and kv
 
@@ -295,31 +295,31 @@ class ChunkedCrossAttention(nn.Module):
         # so that there is no information leakage.
         # That is the retrieved neighbors from the first chunks will have information from the first chunk.
         # So by shifting the sequence to the left by chunk_len - 1 we make sure that information only flows to the right.
-        q = q[:, self.chunk_len - 1:]
+        query = query[:, self.chunk_len - 1:]
 
-        if q.shape[1] > n_chunks * self.chunk_len:
+        if query.shape[1] > n_chunks * self.chunk_len:
             raise RuntimeError(
                 f"Chunked cross attention expects q.shape[1] <= n_chunks * chunk_len, "
-                f"got q.shape[1]: {q.shape[1]}, n_chunks: {n_chunks}, chunk_len: {self.chunk_len}. "
+                f"got q.shape[1]: {query.shape[1]}, n_chunks: {n_chunks}, chunk_len: {self.chunk_len}. "
                 f"It's likely you're not forming retreived_hidden_states correctly"
                 f"They should be of shape (batch_size, n_chunks, n_neighbors, neighbor_len, hidden_size)"
                 f"And the retreival query used to retreive the hiddens should be of shape (batch_size, n_chunks, chunk_len, hidden_size)"
             )
 
-        if q.shape[1] < n_chunks * self.chunk_len:
+        if query.shape[1] < n_chunks * self.chunk_len:
             # Append empty embeddings to the end to be able to split the input into chunks
             # NOTE: this code a bit sus, need to figure out if we assume that seq_len == n_chunks * chunk_len
-            add_len = n_chunks * self.chunk_len - q.shape[1]
+            add_len = n_chunks * self.chunk_len - query.shape[1]
             assert 0 <= add_len < self.chunk_len, f"add_len: {add_len}, chunk_len: {self.chunk_len}"
-            q = torch.cat((q, q.new_zeros(batch_size, add_len, q_hidden)), dim=1)
+            query = torch.cat((query, query.new_zeros(batch_size, add_len, q_hidden)), dim=1)
 
-        q = q.reshape(batch_size, n_chunks, self.chunk_len, q_hidden)
+        query = query.reshape(batch_size, n_chunks, self.chunk_len, q_hidden)
 
-        q = self.q_proj(q).view(batch_size, n_chunks, self.chunk_len, self.num_heads, self.head_size)
+        query = self.q_proj(query).view(batch_size, n_chunks, self.chunk_len, self.num_heads, self.head_size)
         k = self.k_proj(kv).view(batch_size, n_chunks, n_neighbors, neighbor_len, self.num_heads, self.head_size)
         v = self.v_proj(kv).view(batch_size, n_chunks, n_neighbors, neighbor_len, self.num_heads, self.head_size)
 
-        attn = torch.einsum('bcihd,bcnjhd->bchinj', q, k)  # (batch_size, n_chunks, n_neighbors, neighbor_len, n_neighbors)
+        attn = torch.einsum('bcihd,bcnjhd->bchinj', query, k)  # (batch_size, n_chunks, n_neighbors, neighbor_len, n_neighbors)
         assert attn.shape == (batch_size, n_chunks, self.num_heads, self.chunk_len, n_neighbors, neighbor_len)
 
         attn = attn / math.sqrt(self.head_size)
@@ -464,7 +464,7 @@ class TransformerBlock(nn.Module):
             # TODO: support caching
             residual = hidden_states
             hidden_states = self.cross_attn_ln(hidden_states)
-            hidden_states = self.cross_attn(q=hidden_states, kv=retreived_hidden_states)
+            hidden_states = self.cross_attn(query=hidden_states, kv=retreived_hidden_states)
             hidden_states = residual + hidden_states
 
         if not use_cache:
@@ -792,7 +792,10 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
 
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
-        self.ln_retreival_queries = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.post_retreival_proj = nn.Identity()
+        if config.retreived_states_hidden_size != 0:
+            self.post_retreival_proj = nn.Linear(config.retreived_states_hidden_size, self.embed_dim)
+
         self.ln_retreival_hiddens = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         self.gradient_checkpointing = False
@@ -804,13 +807,18 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
             hidden_states,
             *,
             allow_padding,
-            do_pool=False,
         ):
             """
             This function is not a part of the half_forward,
             because during generation we will mostly have sequences of length%chunk_len != 0 and it's expendive to always pad
 
             `allow_padding` is **intentionally left without a default value**, provide it explicitly
+
+            Args:
+                hidden_states: Tensor of shape (batch_size, seq_len, hidden)
+                allow_padding: Whether to allow padding the input to be divisible by chunk_len
+            Returns:
+                retreival_queries: Tensor of shape (batch_size * n_chunks, hidden)
             """
             batch_size, seq_len, hidden = hidden_states.shape
             chunk_len = self.config.chunked_cross_attention_chunk_len
@@ -825,9 +833,8 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
             retreival_queries = hidden_states.reshape(
                 batch_size, -1, self.config.chunked_cross_attention_chunk_len, hidden
             )
-            retreival_queries = self.ln_retreival_queries(retreival_queries)
-            if do_pool:
-                retreival_queries = torch.max(retreival_queries, dim=2).values
+            retreival_queries = torch.max(retreival_queries, dim=2).values
+            retreival_queries = retreival_queries.flatten(0, 1)
             return retreival_queries
 
     def first_half_forward(
@@ -985,6 +992,7 @@ class ConditionallyIndependentRetreivalAugTransformer(StructuredTransformerPreTr
         # End of input verification/formation
         # ############################################################
 
+        retreived_hidden_states = self.post_retreival_proj(retreived_hidden_states)
         retreived_hidden_states = self.ln_retreival_hiddens(retreived_hidden_states)
 
         for i, (layer, layer_kv_cache) in enumerate(zip(self.retreival_layers, past[len(self.non_retreival_layers):])):

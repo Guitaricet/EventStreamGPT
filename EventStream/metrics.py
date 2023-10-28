@@ -19,15 +19,11 @@ from torchmetrics.classification import (
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 import wandb
+from EventStream.config import MetricCategories, Metrics, MetricsConfig, OptimizationConfig, Split
 
 from EventStream.data.types import DataModality
 from EventStream.transformer.config import (
     Averaging,
-    MetricCategories,
-    Metrics,
-    MetricsConfig,
-    OptimizationConfig,
-    Split,
     StructuredEventProcessingMode,
     StructuredTransformerConfig,
 )

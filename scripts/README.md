@@ -238,7 +238,7 @@ look like:
 PYTHONPATH="$EVENT_STREAM_PATH:$PYTHONPATH" python $EVENT_STREAM_PATH/scripts/finetune.py \
 	load_from_model_dir=/pretrained/model/dir \
 	optimization_config.batch_size=64 \
-	optimization_config.init_lr=1e-4 \
+	optimization_config.max_lr=1e-4 \
 	optimization_config.end_lr=null \
 	optimization_config.max_epochs=25 \
 	task_df_name=lv_ef/60d

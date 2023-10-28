@@ -10,9 +10,9 @@ few_shot_commands:
   fine_tuning_task_names: [] # Add fine-tuning task_DF names here.
   fine_tuning_subset_sizes: [5, 10, 50, 100, 250, 500, 1000, "FULL"]
   optimization_config:
-    init_lr: 1e-2
+    max_lr: 1e-2
     end_lr: null
-    end_lr_frac_of_init_lr: 1e-3
+    end_lr_frac_of_max_lr: 1e-3
     max_epochs: 100
     batch_size: 32
     validation_batch_size: 32
