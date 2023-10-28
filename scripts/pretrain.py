@@ -229,9 +229,7 @@ def train(cfg: PretrainConfig):
                 n_neighbours=n_neighbours,
             )
             # batch_size, n_chunks, n_neighbors, neighbor_len, hidden
-            # hidden = hidden.reshape(batch_size, n_chunks, n_neighbours, -1, hidden.shape[-1])
-
-            hidden = torch.zeros(batch_size, n_chunks, n_neighbours, chunk_len, 1024, dtype=dtype, device=device)
+            hidden = hidden.reshape(batch_size, n_chunks, n_neighbours, -1, hidden.shape[-1])
             hidden = hidden.to(dtype=dtype, device=device)
 
             retreival_output = model.second_half_forward(

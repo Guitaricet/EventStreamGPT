@@ -81,9 +81,8 @@ class Retreiver:
             raise RuntimeError(f"To embed documents, provide embedder_name_or_path to the constructor of {self.__class__.__name__}")
         
         texts = [doc["text"] for doc in documents]
-        return None, None
-        # inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(self.embedder.device)
-        # embeddings = self.embedder(**inputs).last_hidden_state
-        # seq_len = embeddings.shape[-2]
-        # embeddings = embeddings.reshape(len(queries), n_neighbours, seq_len, embeddings.shape[-1])
-        # return documents, embeddings
+        inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(self.embedder.device)
+        embeddings = self.embedder(**inputs).last_hidden_state
+        seq_len = embeddings.shape[-2]
+        embeddings = embeddings.reshape(len(queries), n_neighbours, seq_len, embeddings.shape[-1])
+        return documents, embeddings
