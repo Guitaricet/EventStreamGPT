@@ -13,7 +13,7 @@ from EventStream.transformer.lightning_modules.embedding import FinetuneConfig, 
 
 torch.set_float32_matmul_precision("high")
 
-def train(cfg: PretrainConfig):
+def train(cfg: FinetuneConfig):
     logger.info("Starting training")
     seed_everything(cfg.seed)
 
@@ -72,7 +72,7 @@ def train(cfg: PretrainConfig):
     logger.info("Script finished successfully!")
 
 @hydra.main(version_base=None, config_name="finetune_config")
-def main(cfg: PretrainConfig):
+def main(cfg: FinetuneConfig):
     if type(cfg) is not FinetuneConfig:
         cfg = hydra.utils.instantiate(cfg, _convert_="object")
     
