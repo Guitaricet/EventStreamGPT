@@ -24,13 +24,13 @@ model_config:
   numerical_embedding_weight: 0.5
   do_normalize_by_measurement_index: false
   structured_event_processing_mode: conditionally_independent
-  num_hidden_layers: 12
+  num_hidden_layers: 2  # reduced to a super small number for the purposes of debug
   seq_attention_types:
   - global
   TTE_generation_layer_type: log_normal_mixture
   TTE_lognormal_generation_num_components: 8
   head_dim: 64
-  hidden_size: 768
+  hidden_size: 768  # make sure that it's equal to the key size in our retreival database
   num_attention_heads: 12
   attention_dropout: 0.1
   input_dropout: 0.1

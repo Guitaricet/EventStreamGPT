@@ -74,12 +74,12 @@ class Retreiver:
             raise RuntimeError(f"Expected queries to be of shape (n_queries, {self.faiss_index.d}), got {queries.shape}")
 
         _, indices = self.faiss_index.search(queries, n_neighbours)
-        
+
         documents = [self.documents[i] for i in indices.flatten()]
 
         if self.embedder is None:
             raise RuntimeError(f"To embed documents, provide embedder_name_or_path to the constructor of {self.__class__.__name__}")
-        
+
         texts = [doc["text"] for doc in documents]
         inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(self.embedder.device)
         embeddings = self.embedder(**inputs).last_hidden_state
