@@ -3,9 +3,9 @@
 from setuptools import find_packages, setup
 
 setup(
-    name="EventStreamGPT",
+    name="EventStream",
     version="0.0.1",
-    description="EventStreamGPT",
+    description="EventStream",
     author="Matthew McDermott",
     author_email="mattmcdermott8@gmail.com",
     url="https://github.com/mmcdermott/EventStreamGPT",
