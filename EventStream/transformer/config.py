@@ -33,6 +33,213 @@ class Averaging(StrEnum):
     """Weighted-averaging; Metrics across different labels are averaged weighted by label/class frequency."""
 
 
+@hydra_dataclass
+class MetricsConfig(JSONableMixin):
+    """An overall configuration for what metrics should be tracked.
+
+    Args:
+        n_auc_thresholds: The number of thresholds to be used when computing AUROCs, for memory efficiency.
+        do_skip_all_metrics: If `True`, all metrics will be skipped by the model. This can save significant
+            time.
+        do_validate_args: If `True`, `torchmetrics` metrics objects will validate their arguments during
+            computation. This costs time.
+        include_metrics: A dictionary detailing what metrics should be tracked over what splits, for what
+            measurements, in what ways. If `do_skip_all_metrics`, this will be silently overwritten with {}.
+            The format for this dictionary is as follows. The outermost level of keys is splits. Within each
+            split, there is another dictionary, whose keys are metric categories that should be tracked in
+            some form on that split. Each metric category maps to either the boolean `True`, in which case
+            that metric category should be tracked across all relevant metrics, or to a dictionary mapping
+            metric functions to either the boolean `True`, indicating they should be tracked over all relevant
+            weightings, or to a list of weightings which should be tracked.
+    """
+
+    n_auc_thresholds: int | None = 50
+    do_skip_all_metrics: bool = False
+    do_validate_args: bool = False
+
+    include_metrics: dict[
+        # Split, Dict[MetricCategories, Union[bool, Dict[Metrics, Union[bool, List[Averaging]]]]]
+        str,
+        Any,
+    ] = dataclasses.field(
+        default_factory=lambda: (
+            {
+                Split.TUNING: {
+                    MetricCategories.LOSS_PARTS: True,
+                    MetricCategories.TTE: {Metrics.MSE: True, Metrics.MSLE: True},
+                    MetricCategories.CLASSIFICATION: {
+                        Metrics.AUROC: [Averaging.WEIGHTED],
+                        Metrics.ACCURACY: True,
+                    },
+                    MetricCategories.REGRESSION: {Metrics.MSE: True},
+                },
+                Split.HELD_OUT: {
+                    MetricCategories.LOSS_PARTS: True,
+                    MetricCategories.TTE: {Metrics.MSE: True, Metrics.MSLE: True},
+                    MetricCategories.CLASSIFICATION: {
+                        Metrics.AUROC: [Averaging.WEIGHTED],
+                        Metrics.ACCURACY: True,
+                    },
+                    MetricCategories.REGRESSION: {Metrics.MSE: True},
+                },
+            }
+        )
+    )
+
+    def __post_init__(self):
+        if self.do_skip_all_metrics:
+            self.include_metrics = {}
+
+    def do_log_only_loss(self, split: Split) -> bool:
+        """Returns True if only loss should be logged for this split."""
+        if self.do_skip_all_metrics or split not in self.include_metrics or not self.include_metrics[split]:
+            return True
+        else:
+            return False
+
+    def do_log(self, split: Split, cat: MetricCategories, metric_name: str | None = None) -> bool:
+        """Returns True if `metric_name` should be tracked for `split` and `cat`."""
+        if self.do_log_only_loss(split):
+            return False
+
+        inc_dict = self.include_metrics[split].get(cat, False)
+        if not inc_dict:
+            return False
+        elif metric_name is None or inc_dict is True:
+            return True
+
+        has_averaging = "_" in metric_name.replace("explained_variance", "")
+        if not has_averaging:
+            return metric_name in inc_dict
+
+        parts = metric_name.split("_")
+        averaging = parts[0]
+        metric = "_".join(parts[1:])
+
+        permissible_averagings = inc_dict.get(metric, [])
+        if (permissible_averagings is True) or (averaging in permissible_averagings):
+            return True
+        else:
+            return False
+
+    def do_log_any(self, cat: MetricCategories, metric_name: str | None = None) -> bool:
+        """Returns True if `metric_name` should be tracked for `cat` and any split."""
+        for split in Split.values():
+            if self.do_log(split, cat, metric_name):
+                return True
+        return False
+
+
+@hydra_dataclass
+class OptimizationConfig(JSONableMixin):
+    """Configuration for optimization variables for training a model.
+
+    Args:
+        init_lr: The initial learning rate used by the optimizer. Given warmup is used, this will be the peak
+            learning rate after the warmup period.
+        end_lr: The final learning rate at the end of all learning rate decay.
+        end_lr_frac_of_init_lr: The fraction of the initial learning rate that the end learning rate should
+            be. Must be consistent with end_lr, when both are set. If only one is set, the other will be
+            correctly inferred upon initialization. This is largely useful during hyperparameter tuning, to
+            avoid sampling hyperparameters where ``end_lr`` is larger than ``init_lr``, which is not
+            compatible with the supported learning rate scheduler.
+        max_epochs: The maximum number of training epochs.
+        batch_size: The batch size used during stochastic gradient descent.
+        validation_batch_size: The batch size used during evaluation.
+        lr_frac_warmup_steps: What fraction of the total training steps should be spent increasing the
+            learning rate during the learning rate warmup period. Should not be set simultaneously with
+            `lr_num_warmup_steps`. This is largely used in the `set_tot_dataset` function which initializes
+            missing parameters given the dataset size, such as inferring the `max_num_training_steps` and
+            setting `lr_num_warmup_steps` given this parameter and the inferred `max_num_training_steps`.
+        lr_num_warmup_steps: How many training steps should be spent on learning rate warmup. If this is set
+            then `lr_frac_warmup_steps` should be set to None, and `lr_frac_warmup_steps` will be properly
+            inferred during `set_to_dataset`.
+        max_training_steps: The maximum number of training steps the system will run for given `max_epochs`,
+            `batch_size`, and the size of the used dataset (as inferred via `set_to_dataset`). Generally
+            should not be set at initialization.
+        lr_decay_power: The decay power in the learning rate polynomial decay with warmup. 1.0 corresponds to
+            linear decay.
+        weight_decay: The L2 weight regularization penalty that is applied during training.
+        patience: The number of epochs to wait before early stopping if the validation loss does not improve.
+            If None, early stopping is not used.
+        gradient_accumulation: The number of gradient accumulation steps to use. If None, gradient
+            accumulation is not used.
+
+    Raises:
+        ValueError: If `end_lr`, `init_lr`, and `end_lr_frac_of_init_lr` are not consistent, or if `end_lr`
+            and `end_lr_frac_of_init_lr` are both unset.
+    """
+
+    init_lr: float = 1e-2
+    end_lr: float | None = None
+    end_lr_frac_of_init_lr: float | None = 1e-3
+    max_epochs: int = 100
+    batch_size: int = 32
+    validation_batch_size: int = 32
+    lr_frac_warmup_steps: float | None = 0.01
+    lr_num_warmup_steps: int | None = None
+    max_training_steps: int | None = None
+    lr_decay_power: float = 1.0
+    weight_decay: float = 0.01
+    patience: int | None = None
+    gradient_accumulation: int | None = None
+
+    num_dataloader_workers: int = 0
+
+    def __post_init__(self):
+        if self.end_lr_frac_of_init_lr is not None:
+            if self.end_lr_frac_of_init_lr <= 0.0 or self.end_lr_frac_of_init_lr >= 1.0:
+                raise ValueError("`end_lr_frac_of_init_lr` must be between 0.0 and 1.0!")
+            if self.end_lr is not None:
+                prod = self.end_lr_frac_of_init_lr * self.init_lr
+                if not math.isclose(self.end_lr, prod):
+                    raise ValueError(
+                        "If both set, `end_lr` must be equal to `end_lr_frac_of_init_lr * init_lr`! Got "
+                        f"end_lr={self.end_lr}, end_lr_frac_of_init_lr * init_lr = {prod}!"
+                    )
+            self.end_lr = self.end_lr_frac_of_init_lr * self.init_lr
+        else:
+            if self.end_lr is None:
+                raise ValueError("Must set either end_lr or end_lr_frac_of_init_lr!")
+            self.end_lr_frac_of_init_lr = self.end_lr / self.init_lr
+
+    def set_to_dataset(self, dataset: PytorchDataset):
+        """Sets parameters in the config to appropriate values given dataset.
+
+        Some parameters for optimization are dependent upon the total size of the dataset (e.g., converting
+        between a fraction of training and a concrete number of steps). This function sets these parameters
+        based on dataset's size.
+
+        Args:
+            dataset: The dataset to set the internal parameters too.
+
+        Raises:
+            ValueError: If the setting process does not yield consistent results.
+        """
+
+        steps_per_epoch = int(math.ceil(len(dataset) / self.batch_size))
+
+        if self.max_training_steps is None:
+            self.max_training_steps = steps_per_epoch * self.max_epochs
+
+        if self.lr_num_warmup_steps is None:
+            assert self.lr_frac_warmup_steps is not None
+            self.lr_num_warmup_steps = int(round(self.lr_frac_warmup_steps * self.max_training_steps))
+        elif self.lr_frac_warmup_steps is None:
+            self.lr_frac_warmup_steps = self.lr_num_warmup_steps / self.max_training_steps
+
+        if not (
+            math.floor(self.lr_frac_warmup_steps * self.max_training_steps) <= self.lr_num_warmup_steps
+        ) and (math.ceil(self.lr_frac_warmup_steps * self.max_training_steps) >= self.lr_num_warmup_steps):
+            raise ValueError(
+                "`self.lr_frac_warmup_steps`, `self.max_training_steps`, and `self.lr_num_warmup_steps` "
+                "should be consistent, but they aren't! Got\n"
+                f"\tself.max_training_steps = {self.max_training_steps}\n"
+                f"\tself.lr_frac_warmup_steps = {self.lr_frac_warmup_steps}\n"
+                f"\tself.lr_num_warmup_steps = {self.lr_num_warmup_steps}"
+            )
+
+
 class StructuredEventProcessingMode(StrEnum):
     """Structured event sequence processing modes."""
 
@@ -138,6 +345,9 @@ class StructuredTransformerConfig(PretrainedConfig):
         do_normalize_by_measurement_index:
             If True, the input embeddings are normalized such that each unique measurement index contributes
             equally to the embedding.
+        do_use_learnable_sinusoidal_ATE:
+            If True, then the model will produce temporal position embeddings via a sinnusoidal position
+            embedding such that the frequencies are learnable, rather than fixed and regular.
 
 
         structured_event_processing_mode: Specifies how the internal event is processed internally by the
@@ -222,6 +432,7 @@ class StructuredTransformerConfig(PretrainedConfig):
         categorical_embedding_weight: float = 0.5,
         numerical_embedding_weight: float = 0.5,
         do_normalize_by_measurement_index: bool = False,
+        do_use_learnable_sinusoidal_ATE: bool = False,
         # Model configuration
         structured_event_processing_mode: StructuredEventProcessingMode = StructuredEventProcessingMode.CONDITIONALLY_INDEPENDENT,
         hidden_size: int | None = None,
@@ -255,6 +466,7 @@ class StructuredTransformerConfig(PretrainedConfig):
         use_cache: bool = True,
         **kwargs,
     ):
+        self.do_use_learnable_sinusoidal_ATE = do_use_learnable_sinusoidal_ATE
         # Resetting default values to appropriate types
         if vocab_sizes_by_measurement is None:
             vocab_sizes_by_measurement = {}
@@ -383,8 +595,10 @@ class StructuredTransformerConfig(PretrainedConfig):
 
         if head_dim * num_attention_heads != hidden_size:
             raise ValueError(
-                f"hidden_size must be divisible by num_attention_heads (got `hidden_size`: {hidden_size} "
-                f"and `num_attention_heads`: {num_attention_heads})."
+                "hidden_size must be consistent with head_dim and divisible by num_attention_heads. Got:\n"
+                f"  hidden_size: {hidden_size}\n"
+                f"  head_dim: {head_dim}\n"
+                f"  num_attention_heads: {num_attention_heads}"
             )
 
         if type(num_hidden_layers) is not int:
@@ -585,9 +799,10 @@ class StructuredTransformerConfig(PretrainedConfig):
             self.std_log_inter_event_time_min = dataset.std_log_inter_event_time_min
 
         if dataset.has_task:
-            if len(dataset.tasks) == 1:
-                # In the single-task fine-tuning case, we can infer a lot of this from the dataset.
+            if self.finetuning_task is None and len(dataset.tasks) == 1:
                 self.finetuning_task = dataset.tasks[0]
+            if self.finetuning_task is not None:
+                # In the single-task fine-tuning case, we can infer a lot of this from the dataset.
                 match dataset.task_types[self.finetuning_task]:
                     case "binary_classification" | "multi_class_classification":
                         self.id2label = {
@@ -601,6 +816,8 @@ class StructuredTransformerConfig(PretrainedConfig):
                         self.problem_type = "regression"
             elif all(t == "binary_classification" for t in dataset.task_types.values()):
                 self.problem_type = "multi_label_classification"
+                self.id2label = {0: False, 1: True}
+                self.label2id = {v: i for i, v in self.id2label.items()}
                 self.num_labels = len(dataset.tasks)
             elif all(t == "regression" for t in dataset.task_types.values()):
                 self.num_labels = len(dataset.tasks)
@@ -625,7 +842,7 @@ class StructuredTransformerConfig(PretrainedConfig):
     @classmethod
     def from_dict(cls, *args, **kwargs) -> "StructuredTransformerConfig":
         raw_from_dict = super().from_dict(*args, **kwargs)
-        if raw_from_dict.measurmeent_configs:
+        if raw_from_dict.measurement_configs:
             new_meas_configs = {}
             for k, v in raw_from_dict.measurement_configs.items():
                 new_meas_configs[k] = MeasurementConfig.from_dict(v)
