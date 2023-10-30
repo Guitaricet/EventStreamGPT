@@ -15,9 +15,10 @@ from EventStream.transformer.conditionally_independent_model import CondIndepMod
 def get_embeddings(cfg: PretrainConfig):
     logger.info("Starting training")
 
-    device = "cuda"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float32
     model_config: StructuredTransformerConfig = cfg.model_config
+    optimization_config: OptimizationConfig = cfg.optimization_config
 
     logger.info("Building train dataset")
     train_dataset = PytorchDataset(cfg.data_config, split="train")
@@ -32,14 +33,14 @@ def get_embeddings(cfg: PretrainConfig):
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=model_config.per_device_train_batch_size,
-        num_workers=model_config.num_dataloader_workers,
+        batch_size=optimization_config.per_device_train_batch_size,
+        num_workers=optimization_config.num_dataloader_workers,
         collate_fn=train_dataset.collate,
         shuffle=False,
     )
 
     chunk_len = model_config.chunked_cross_attention_chunk_len
-    batch_size = model_config.per_device_train_batch_size
+    batch_size = optimization_config.per_device_train_batch_size
 
     embeddings_list = []
 
@@ -68,6 +69,7 @@ def get_embeddings(cfg: PretrainConfig):
     logger.info("Script finished successfully!")
 
 
+# This is not right.
 @hydra.main(version_base=None, config_name="finetune_config")
 def main(cfg: PretrainConfig):
     if type(cfg) is not PretrainConfig:
