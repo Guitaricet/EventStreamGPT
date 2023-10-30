@@ -23,6 +23,10 @@ def get_embeddings(cfg: PretrainConfig):
     logger.info("Building train dataset")
     train_dataset = PytorchDataset(cfg.data_config, split="train")
 
+    logger.info("Setting up config")
+    model_config.set_to_dataset(train_dataset)
+    optimization_config.set_to_dataset(train_dataset)
+
     from_pretrained = None
     if from_pretrained is not None:
         model = CondIndepModelForGenerativeSequenceModeling.from_pretrained(from_pretrained)
