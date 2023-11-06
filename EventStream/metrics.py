@@ -105,7 +105,11 @@ class MetricsLogger:
                                 [Averaging.MACRO, Averaging.WEIGHTED],
                             ),
                         }
-                        metric_kwargs = {"num_classes": vocab_size, "ignore_index": 0}
+                        metric_kwargs = {
+                            "num_classes": vocab_size,
+                            "ignore_index": 0,
+                            "validate_args": self.metrics_config.do_validate_args,
+                        }
                     case DataModality.MULTI_LABEL_CLASSIFICATION:
                         cat = MetricCategories.CLASSIFICATION
                         metrics = {
@@ -122,7 +126,10 @@ class MetricsLogger:
                                 [Averaging.MACRO, Averaging.WEIGHTED, Averaging.MICRO],
                             ),
                         }
-                        metric_kwargs = {"num_labels": vocab_size}
+                        metric_kwargs = {
+                            "num_labels": vocab_size,
+                            "validate_args": self.metrics_config.do_validate_args,
+                        }
                     case DataModality.UNIVARIATE_REGRESSION:
                         cat = MetricCategories.REGRESSION
                         metrics = {
@@ -143,10 +150,11 @@ class MetricsLogger:
                     case _:
                         raise ValueError(f"Unrecognized modality {task_type}!")
 
-                if not self.metrics_config.do_validate_args:
-                    metric_kwargs["validate_args"] = False
-
-                auc_kwargs = {**metric_kwargs, "thresholds": self.metrics_config.n_auc_thresholds}
+                auc_kwargs = {
+                    **metric_kwargs,
+                    "thresholds": self.metrics_config.n_auc_thresholds,
+                    "compute_on_cpu": True,
+                }
                 for metric, (metric_cls, averagings) in metrics.items():
                     if metric in (Metrics.AUROC, Metrics.AUPRC):
                         metric_cls_kwargs = {**auc_kwargs}

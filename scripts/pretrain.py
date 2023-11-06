@@ -96,7 +96,7 @@ def train(cfg: PretrainConfig):
     logger.info("Starting training")
     seed_everything(cfg.seed)
 
-    device = f"cuda"
+    device = f"cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float32
 
     world_size = 1
