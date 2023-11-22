@@ -6,13 +6,11 @@ do_overwrite: false
 seed: 1
 retreiver_config:
   faiss_index_path: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/faiss/faiss_index_14-32-52/faiss_index_14-32-52.idx
-  documents_dir: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/faiss/faiss_index_14-32-52
-  embedder_name_or_path: roberta-large
-  embedder_device: cuda:1
+  dataset_path: /mnt/shared_home/vlialin/documents/EventStreamGPT/data/faiss/faiss_index_14-32-52/huggingface_dataset
 model_config:
   retreival_augmented: true
   chunked_cross_attention_chunk_len: 32
-  retreived_states_hidden_size: 1024  # for roberta-large
+  retreived_states_hidden_size: 768  # for microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
   do_use_learnable_sinusoidal_ATE: false
   do_split_embeddings: false
   categorical_embedding_dim: null

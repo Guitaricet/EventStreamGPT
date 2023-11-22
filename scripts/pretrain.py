@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """Pre-trains a model from scartch."""
 import copy
-import dataclasses
 import json
 import os
 import random
@@ -19,23 +18,18 @@ import wandb
 from transformers import get_polynomial_decay_schedule_with_warmup
 
 import hydra
-import omegaconf
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from loguru import logger
 
 import EventStream
-from EventStream.config import OptimizationConfig, RetreiverConfig, Split
+from EventStream import Retreiver, RetreiverConfig, PretrainConfig, OptimizationConfig
+from EventStream.config import Split
 from EventStream.transformer.config import StructuredTransformerConfig
 from EventStream.data.pytorch_dataset import PytorchDataset, PytorchDatasetConfig
-from EventStream.transformer.config import (
-    StructuredEventProcessingMode,
-)
-from EventStream.config import PretrainConfig
+from EventStream.transformer.config import StructuredEventProcessingMode
 from EventStream.transformer.modeling_retro import ConditionallyIndependentRetreivalAugTransformer
 from EventStream.transformer.conditionally_independent_model import CondIndepModelForGenerativeSequenceModeling
-
-torch.set_float32_matmul_precision("high")
 
 
 def seed_everything(seed):
@@ -140,7 +134,7 @@ def train(cfg: PretrainConfig):
     # Model
     model: ConditionallyIndependentRetreivalAugTransformer = get_model(model_config)
     model = model.to(dtype=dtype, device=device)
-    retreiver: EventStream.Retreiver = EventStream.Retreiver.from_config(retreiver_config, dtype=dtype)
+    retreiver: Retreiver = Retreiver.from_config(retreiver_config, dtype=dtype)
     logger.info(f"Model: \n{model}")
 
     gradient_accumulation = optimization_config.total_batch_size // (optimization_config.per_device_train_batch_size * world_size)

@@ -1,22 +1,15 @@
 import enum
 import math
-import os
-import json
 import dataclasses
 from pathlib import Path
 from typing import Any
 
 import omegaconf
-import torch
 
 from .data.config import PytorchDatasetConfig
 from .data.pytorch_dataset import PytorchDataset
-from .data.types import DataModality, PytorchBatch
-from .transformer.conditionally_independent_model import \
-    CondIndepModelForGenerativeSequenceModeling
 from .transformer.config import (
     Averaging,
-    StructuredEventProcessingMode,
     StructuredTransformerConfig,
 )
 from .utils import JSONableMixin, StrEnum, hydra_dataclass
@@ -27,12 +20,8 @@ SKIP_CFG_PARAMS = {"seq_attention_layers", "dep_graph_attention_layers"}
 @hydra_dataclass
 class RetreiverConfig(JSONableMixin):
     faiss_index_path: str | None = None  # required if used
-    documents_dir: str | None = None  # required if used
-    muse_weights_path: str | None = None
-    embedder_name_or_path: str | None = None
-    embedder_device: str = "cuda:1"
-    load_in_8bit: bool = False
-    n_neighbours: int = 4
+    dataset_path: str | None = None  # required if used
+    muse_weights_path: str | None = None  # optional
 
 
 @hydra_dataclass
